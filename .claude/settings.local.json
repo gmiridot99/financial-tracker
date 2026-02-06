@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app:*)",
+      "Bash(npx create-next-app@latest financial-life-planner --typescript --tailwind --app --no-src-dir --import-alias \"@/*\" --eslint --turbopack)",
+      "Bash(npm install:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint)",
+      "Bash(./ralph.sh:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run check:*)",
+      "Bash(test:*)",
+      "Bash(\"src/app/dashboard/[year]/recap/page.tsx\")",
+      "Bash(npx supabase:*)",
+      "Bash(if exist .env type .env)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run test)",
+      "Bash(npm run dev:*)",
+      "Bash(npx vitest:*)",
+      "Bash(ls \"C:\\\\dev\\\\RALPH_LOOP\\\\src\\\\app\\\\dashboard\\\\[year]\\\\recap\"\" 2>/dev/null || echo \"Directory not found \")",
+      "Bash(npx next build:*)",
+      "Bash(findstr:*)",
+      "Bash(more:*)",
+      "Bash(del APPLY_MIGRATIONS.md IMPLEMENTATION_SUMMARY.md RECURRING_SIMPLIFICATION.md SIMULATOR_PLAN.md SIMULATOR_PROGRESS.md WEALTH_TRACKING_IMPLEMENTATION.md PROJECT_SUMMARY.md prompt.md)"
+    ]
+  }
+}
