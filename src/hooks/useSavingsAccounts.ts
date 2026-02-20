@@ -252,7 +252,7 @@ export function useSavingsAccounts({
       return;
     }
 
-    const newPrimaryName = accounts.find(a => a.id === accountId)?.name ?? '';
+    const newPrimaryName = accounts.find(a => a.id === accountId)?.name ?? 'Conto selezionato';
     toast.success(`"${newPrimaryName}" è ora il conto principale`);
     await loadAccounts();
     onAccountsChanged?.();
