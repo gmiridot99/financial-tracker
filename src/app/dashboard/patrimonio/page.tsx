@@ -12,11 +12,13 @@ import InvestmentAccountsList from '@/components/InvestmentAccountsList';
 import NetWorthCard from '@/components/NetWorthCard';
 import { formatCurrency } from '@/hooks/useInvestmentAccounts';
 import type { InvestmentDistributionData } from '@/hooks/useInvestmentAccounts';
+import type { AccountInfo } from '@/components/InvestmentPerformanceChart';
 import type { AssetSlice, AccountSlice, DistributionMode } from '@/components/WealthDistributionChart';
 import dynamic from 'next/dynamic';
 const SavingsPerformanceChart = dynamic(() => import('@/components/SavingsPerformanceChart'), { ssr: false });
 const InvestmentPerformanceChart = dynamic(() => import('@/components/InvestmentPerformanceChart'), { ssr: false });
 const WealthDistributionChart = dynamic(() => import('@/components/WealthDistributionChart'), { ssr: false });
+const PortfolioTrendChart = dynamic(() => import('@/components/PortfolioTrendChart'), { ssr: false });
 
 type Tab = 'risparmi' | 'investimenti';
 
@@ -35,7 +37,8 @@ export default function PatrimonioPage() {
   const [distributionMode, setDistributionMode] = useState<DistributionMode>('per-asset');
   const [assetSlices, setAssetSlices] = useState<AssetSlice[]>([]);
   const [accountSlices, setAccountSlices] = useState<AccountSlice[]>([]);
-  const [savingsAccountsData, setSavingsAccountsData] = useState<{ name: string; balance: number }[]>([]);
+  const [savingsAccountsData, setSavingsAccountsData] = useState<{ id: string; name: string; balance: number }[]>([]);
+  const [investAccounts, setInvestAccounts] = useState<AccountInfo[]>([]);
   const snapshotUpdatedRef = useRef(false);
 
   const checkWealthSnapshot = useCallback(async () => {
@@ -62,11 +65,11 @@ export default function PatrimonioPage() {
     try {
       const { data: savingsAccounts } = await supabase
         .from('savings_accounts')
-        .select('name, balance')
+        .select('id, name, balance')
         .eq('user_id', user.id);
       const savingsAccountsTotal = (savingsAccounts || []).reduce((sum, a) => sum + Number(a.balance), 0);
       setSavingsTotal(savingsAccountsTotal);
-      setSavingsAccountsData((savingsAccounts || []).map(a => ({ name: a.name, balance: Number(a.balance) })));
+      setSavingsAccountsData((savingsAccounts || []).map(a => ({ id: a.id, name: a.name, balance: Number(a.balance) })));
 
       const { data: investAccounts } = await supabase
         .from('investment_accounts')
@@ -105,6 +108,14 @@ export default function PatrimonioPage() {
   const investDistRef = useRef<InvestmentDistributionData | null>(null);
   const handleDistributionData = useCallback((data: InvestmentDistributionData) => {
     investDistRef.current = data;
+    setInvestAccounts(
+      data.accountValues.map(a => ({
+        id: a.id,
+        name: a.name,
+        holdingsValue: a.holdingsValue,
+        cashBalance: a.cashBalance,
+      }))
+    );
   }, []);
 
   // Build combined distribution slices when any data changes
@@ -239,6 +250,16 @@ export default function PatrimonioPage() {
                 totalMarketValue={totalMarketValue}
                 totalCostBasis={totalCostBasis}
                 pricesLoading={pricesLoading}
+                accountSlices={accountSlices}
+              />
+            )}
+
+            {/* Portfolio Trend Chart - full width */}
+            {!isLoading && (
+              <PortfolioTrendChart
+                userId={user.id}
+                savingsTotal={savingsTotal}
+                investmentsTotal={totalMarketValue ?? totalCostBasis}
               />
             )}
 
@@ -274,7 +295,17 @@ export default function PatrimonioPage() {
               {/* RIGHT COLUMN: charts (desktop: sticky sidebar, mobile: between tabs and accounts) */}
               <div className="lg:col-span-2 lg:row-span-2 lg:sticky lg:top-4 lg:self-start space-y-4 mb-4 lg:mb-0">
                 {activeTab === 'risparmi' ? (
-                  <SavingsPerformanceChart userId={user.id} currentTotal={savingsTotal} />
+                  <>
+                    <SavingsPerformanceChart userId={user.id} currentTotal={savingsTotal} accounts={savingsAccountsData} />
+                    {savingsAccountsData.length > 1 && (
+                      <WealthDistributionChart
+                        mode="per-conto"
+                        assetData={[]}
+                        accountData={savingsAccountsData.map(a => ({ name: a.name, value: a.balance }))}
+                        title="Distribuzione Risparmi"
+                      />
+                    )}
+                  </>
                 ) : (
                   <>
                     {/* Controvalore Card */}
@@ -317,79 +348,45 @@ export default function PatrimonioPage() {
                       userId={user.id}
                       totalMarketValue={totalMarketValue}
                       totalCashBalance={totalCashBalance}
+                      accounts={investAccounts}
                     />
+                    {/* WealthDistributionChart con toggle - solo tab investimenti */}
+                    {(assetSlices.length > 0 || accountSlices.length > 0) && (
+                      <>
+                        <div className="bg-warmBg-tertiary rounded-lg p-0.5 flex">
+                          <button
+                            onClick={() => setDistributionMode('per-asset')}
+                            className={`flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all duration-300 ${
+                              distributionMode === 'per-asset'
+                                ? 'bg-warmAccent-primary text-white shadow-sm'
+                                : 'text-warmText-tertiary hover:text-warmText-secondary'
+                            }`}
+                          >
+                            Per Asset
+                          </button>
+                          <button
+                            onClick={() => setDistributionMode('per-conto')}
+                            className={`flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all duration-300 ${
+                              distributionMode === 'per-conto'
+                                ? 'bg-warmAccent-primary text-white shadow-sm'
+                                : 'text-warmText-tertiary hover:text-warmText-secondary'
+                            }`}
+                          >
+                            Per Conto
+                          </button>
+                        </div>
+                        <div key={`dist-${distributionMode}`} className="animate-fadeSlideIn">
+                          <WealthDistributionChart
+                            mode={distributionMode}
+                            assetData={assetSlices}
+                            accountData={accountSlices}
+                          />
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
-                {/* Distribution Chart - desktop only (mobile version below accounts) */}
-                {(assetSlices.length > 0 || accountSlices.length > 0) && (
-                  <div className="hidden lg:block">
-                    <div className="bg-warmBg-tertiary rounded-lg p-0.5 flex mb-3">
-                      <button
-                        onClick={() => setDistributionMode('per-asset')}
-                        className={`flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all duration-300 ${
-                          distributionMode === 'per-asset'
-                            ? 'bg-warmAccent-primary text-white shadow-sm'
-                            : 'text-warmText-tertiary hover:text-warmText-secondary'
-                        }`}
-                      >
-                        Per Asset
-                      </button>
-                      <button
-                        onClick={() => setDistributionMode('per-conto')}
-                        className={`flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all duration-300 ${
-                          distributionMode === 'per-conto'
-                            ? 'bg-warmAccent-primary text-white shadow-sm'
-                            : 'text-warmText-tertiary hover:text-warmText-secondary'
-                        }`}
-                      >
-                        Per Conto
-                      </button>
-                    </div>
-                    <div key={`desktop-${distributionMode}`} className="animate-fadeSlideIn">
-                      <WealthDistributionChart
-                        mode={distributionMode}
-                        assetData={assetSlices}
-                        accountData={accountSlices}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
-
-              {/* Distribution Chart - mobile only (between performance chart and accounts list) */}
-              {(assetSlices.length > 0 || accountSlices.length > 0) && (
-                <div className="lg:hidden mb-4">
-                  <div className="bg-warmBg-tertiary rounded-lg p-0.5 flex mb-3">
-                    <button
-                      onClick={() => setDistributionMode('per-asset')}
-                      className={`flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all duration-300 ${
-                        distributionMode === 'per-asset'
-                          ? 'bg-warmAccent-primary text-white shadow-sm'
-                          : 'text-warmText-tertiary hover:text-warmText-secondary'
-                      }`}
-                    >
-                      Per Asset
-                    </button>
-                    <button
-                      onClick={() => setDistributionMode('per-conto')}
-                      className={`flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-all duration-300 ${
-                        distributionMode === 'per-conto'
-                          ? 'bg-warmAccent-primary text-white shadow-sm'
-                          : 'text-warmText-tertiary hover:text-warmText-secondary'
-                      }`}
-                    >
-                      Per Conto
-                    </button>
-                  </div>
-                  <div key={`mobile-${distributionMode}`} className="animate-fadeSlideIn">
-                    <WealthDistributionChart
-                      mode={distributionMode}
-                      assetData={assetSlices}
-                      accountData={accountSlices}
-                    />
-                  </div>
-                </div>
-              )}
 
               {/* LEFT COLUMN continued: accounts list */}
               <div className="lg:col-span-3 space-y-2">
