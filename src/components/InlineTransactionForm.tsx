@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { PlusCircle, X } from 'lucide-react';
+import { PlusCircle } from 'lucide-react';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatCurrency } from '@/hooks/useInvestmentAccounts';
 
 const transactionSchema = z.object({
   amount: z.string().min(1, 'Importo richiesto').refine((val) => {
@@ -42,14 +43,26 @@ interface Category {
   type: 'income' | 'expense';
 }
 
+interface SavingsAccount {
+  id: string;
+  name: string;
+  balance: number;
+  is_primary: boolean;
+}
+
 interface InlineTransactionFormProps {
   onSuccess: () => void;
   defaultDate?: string;
 }
 
+// Categories that are no longer expense options (now handled by TransferForm)
+const EXCLUDED_EXPENSE_CATEGORIES = ['Investimenti', 'Risparmi'];
+
 export default function InlineTransactionForm({ onSuccess, defaultDate }: InlineTransactionFormProps) {
   const { user } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
+  const [savingsAccounts, setSavingsAccounts] = useState<SavingsAccount[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [formData, setFormData] = useState<TransactionFormData>({
@@ -70,7 +83,16 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
 
   useEffect(() => {
     loadCategories();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Load savings accounts and preselect primary when form expands
+  useEffect(() => {
+    if (isExpanded && user) {
+      loadSavingsAccounts();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExpanded, user]);
 
   const loadCategories = async () => {
     try {
@@ -82,11 +104,27 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
         .order('name');
 
       if (error) throw error;
-      setCategories(data || []);
+      // Exclude Investimenti and Risparmi — those are now handled by TransferForm
+      setCategories((data || []).filter(c => !EXCLUDED_EXPENSE_CATEGORIES.includes(c.name)));
     } catch (error) {
       console.error('Error loading categories:', error);
       toast.error('Errore nel caricamento delle categorie');
     }
+  };
+
+  const loadSavingsAccounts = async () => {
+    const { data } = await supabase
+      .from('savings_accounts')
+      .select('id, name, balance, is_primary')
+      .eq('user_id', user!.id)
+      .order('is_primary', { ascending: false })
+      .order('sort_order', { ascending: true });
+
+    const accounts = data || [];
+    setSavingsAccounts(accounts);
+    // Preselect primary account
+    const primary = accounts.find(a => a.is_primary);
+    if (primary) setSelectedAccountId(primary.id);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -112,23 +150,71 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
 
       const amount = parseFloat(validated.amount.replace(',', '.'));
 
-      const transactionData = {
-        user_id: user.id,
-        type: 'expense',
-        amount,
-        currency: 'EUR',
-        category: validated.category,
-        is_recurring: validated.is_recurring,
-        frequency: validated.is_recurring ? (validated.frequency || 'monthly') : 'one-time',
-        start_date: validated.date,
-        description: validated.description || null,
-      };
+      // Find selected account for balance check
+      const selectedAccount = savingsAccounts.find(a => a.id === selectedAccountId);
+      if (!selectedAccount) {
+        toast.error('Seleziona un conto da cui addebitare la spesa');
+        setIsLoading(false);
+        return;
+      }
 
-      const { error } = await supabase
+      // Balance check: block if insufficient funds
+      if (selectedAccount.balance < amount) {
+        toast.error(
+          `Saldo insufficiente su ${selectedAccount.name} (disponibile: ${formatCurrency(selectedAccount.balance)}, richiesti: ${formatCurrency(amount)})`
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      const originalBalance = selectedAccount.balance;
+      const newBalance = Math.round((originalBalance - amount) * 100) / 100;
+
+      // Step 1: Decrement savings account balance
+      const { error: balanceError } = await supabase
+        .from('savings_accounts')
+        .update({ balance: newBalance })
+        .eq('id', selectedAccountId)
+        .eq('user_id', user.id);
+
+      if (balanceError) {
+        toast.error('Errore nell\'aggiornamento del saldo del conto');
+        setIsLoading(false);
+        return;
+      }
+
+      // Step 2: Insert transaction with from_savings_account_id
+      const { error: txError } = await supabase
         .from('transactions')
-        .insert(transactionData);
+        .insert({
+          user_id: user.id,
+          type: 'expense',
+          amount,
+          currency: 'EUR',
+          category: validated.category,
+          is_recurring: validated.is_recurring,
+          frequency: validated.is_recurring ? (validated.frequency || 'monthly') : 'one-time',
+          start_date: validated.date,
+          description: validated.description || null,
+          from_savings_account_id: selectedAccountId,
+        });
 
-      if (error) throw error;
+      if (txError) {
+        // Rollback: restore account balance
+        const { error: rollbackError } = await supabase
+          .from('savings_accounts')
+          .update({ balance: originalBalance })
+          .eq('id', selectedAccountId)
+          .eq('user_id', user.id);
+
+        if (rollbackError) {
+          toast.error('ERRORE CRITICO: saldo non sincronizzato. Contatta il supporto.');
+        } else {
+          toast.error('Errore durante il salvataggio. Saldo ripristinato.');
+        }
+        setIsLoading(false);
+        return;
+      }
 
       toast.success('Spesa aggiunta!');
       onSuccess();
@@ -165,15 +251,15 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="w-full h-[52px] bg-warmBg-tertiary rounded-2xl border border-dashed border-warmText-muted px-4 flex items-center justify-between hover:border-warmAccent-primary transition-colors group"
+        className="w-full h-[52px] bg-warmData-expense bg-opacity-10 rounded-2xl border border-dashed border-warmData-expense px-4 flex items-center justify-between hover:bg-warmData-expense hover:bg-opacity-20 transition-colors group"
       >
         <div className="flex items-center gap-2">
-          <PlusCircle className="w-5 h-5 text-warmAccent-primary" />
-          <span className="text-sm font-normal text-warmText-disabled group-hover:text-warmText-secondary transition-colors">
+          <PlusCircle className="w-5 h-5 text-warmData-expense" />
+          <span className="text-sm font-normal text-warmData-expense">
             Aggiungi una spesa...
           </span>
         </div>
-        <span className="text-xs font-medium text-warmText-tertiary">EUR</span>
+        <span className="text-xs font-medium text-warmData-expense">EUR</span>
       </button>
     );
   }
@@ -189,6 +275,7 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
           <input
             name="amount"
             type="text"
+            inputMode="decimal"
             placeholder="12,50"
             value={formData.amount}
             onChange={handleChange}
@@ -210,6 +297,29 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
           </select>
         </div>
 
+        {/* Account chip selector */}
+        {savingsAccounts.length > 0 && (
+          <div>
+            <p className="text-xs text-warmText-tertiary mb-1.5">Dal conto</p>
+            <div className="flex flex-wrap gap-1.5">
+              {savingsAccounts.map(account => (
+                <button
+                  key={account.id}
+                  type="button"
+                  onClick={() => setSelectedAccountId(account.id)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    selectedAccountId === account.id
+                      ? 'bg-warmData-expense text-white'
+                      : 'bg-warmBg-primary text-warmText-secondary border border-warmText-muted hover:border-warmData-expense hover:text-warmData-expense'
+                  }`}
+                >
+                  {account.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Description */}
         <input
           name="description"
@@ -218,6 +328,15 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
           value={formData.description}
           onChange={handleChange}
           className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary placeholder:text-warmText-disabled"
+        />
+
+        {/* Date */}
+        <input
+          name="date"
+          type="date"
+          value={formData.date}
+          onChange={handleChange}
+          className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary"
         />
 
         {/* Recurring Options */}

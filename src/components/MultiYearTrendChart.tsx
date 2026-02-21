@@ -28,10 +28,10 @@ interface MultiYearTrendChartProps {
 // ── Helpers ────────────────────────────────────────────────────────────
 
 const LINE_COLORS = {
-  income: '#66BB6A',
-  expenses: '#EF6C4D',
-  wealthInvestments: '#FFB74D',
-  wealthSavings: '#4DB6AC',
+  income: '#34D399',
+  expenses: '#F87171',
+  wealthInvestments: '#A78BFA',
+  wealthSavings: '#38BDF8',
 } as const;
 
 function formatYAxisTick(value: number): string {
@@ -113,18 +113,18 @@ export default function MultiYearTrendChart({ data }: MultiYearTrendChartProps) 
         >
           <CartesianGrid
             strokeDasharray="3 3"
-            stroke="rgba(138, 126, 118, 0.15)"
+            stroke="rgba(90, 100, 116, 0.15)"
             vertical={false}
           />
           <XAxis
             dataKey="year"
-            stroke="#8A7E76"
+            stroke="#5A6474"
             style={{ fontSize: '12px', fontWeight: 500 }}
             tickLine={false}
             axisLine={false}
           />
           <YAxis
-            stroke="#8A7E76"
+            stroke="#5A6474"
             style={{ fontSize: '11px' }}
             tickFormatter={formatYAxisTick}
             tickLine={false}
@@ -146,7 +146,7 @@ export default function MultiYearTrendChart({ data }: MultiYearTrendChartProps) 
             strokeWidth={2.5}
             name="Entrate"
             dot={{ fill: LINE_COLORS.income, r: 4, strokeWidth: 0 }}
-            activeDot={{ r: 6, strokeWidth: 2, stroke: '#1A1714' }}
+            activeDot={{ r: 6, strokeWidth: 2, stroke: '#0B0D11' }}
           />
 
           {/* Expenses Line */}
@@ -157,7 +157,7 @@ export default function MultiYearTrendChart({ data }: MultiYearTrendChartProps) 
             strokeWidth={2.5}
             name="Spese"
             dot={{ fill: LINE_COLORS.expenses, r: 4, strokeWidth: 0 }}
-            activeDot={{ r: 6, strokeWidth: 2, stroke: '#1A1714' }}
+            activeDot={{ r: 6, strokeWidth: 2, stroke: '#0B0D11' }}
           />
 
           {/* Wealth Investments Line */}
@@ -168,7 +168,7 @@ export default function MultiYearTrendChart({ data }: MultiYearTrendChartProps) 
             strokeWidth={2.5}
             name="Investimenti"
             dot={{ fill: LINE_COLORS.wealthInvestments, r: 4, strokeWidth: 0 }}
-            activeDot={{ r: 6, strokeWidth: 2, stroke: '#1A1714' }}
+            activeDot={{ r: 6, strokeWidth: 2, stroke: '#0B0D11' }}
           />
 
           {/* Wealth Savings Line */}
@@ -179,7 +179,7 @@ export default function MultiYearTrendChart({ data }: MultiYearTrendChartProps) 
             strokeWidth={2.5}
             name="Risparmi"
             dot={{ fill: LINE_COLORS.wealthSavings, r: 4, strokeWidth: 0 }}
-            activeDot={{ r: 6, strokeWidth: 2, stroke: '#1A1714' }}
+            activeDot={{ r: 6, strokeWidth: 2, stroke: '#0B0D11' }}
           />
         </LineChart>
       </ResponsiveContainer>

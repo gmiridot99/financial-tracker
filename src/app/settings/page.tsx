@@ -126,7 +126,7 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-4 md:py-8">
         <div className="mb-6 flex items-center gap-3">
           <div className="w-12 h-12 bg-warmAccent-primary rounded-xl flex items-center justify-center">
             <Sliders className="w-6 h-6 text-warmBg-primary" />
@@ -164,7 +164,7 @@ export default function SettingsPage() {
                     onChange={(e) => handleSavingsChange(Number(e.target.value))}
                     className="w-full h-3 bg-warmBg-primary rounded-lg appearance-none cursor-pointer accent-warmData-savings"
                     style={{
-                      background: `linear-gradient(to right, #4DB6AC 0%, #4DB6AC ${savingsPercentage}%, #2A2420 ${savingsPercentage}%, #2A2420 100%)`
+                      background: `linear-gradient(to right, #38BDF8 0%, #38BDF8 ${savingsPercentage}%, #1A1E26 ${savingsPercentage}%, #1A1E26 100%)`
                     }}
                   />
                 </div>
@@ -188,7 +188,7 @@ export default function SettingsPage() {
                     onChange={(e) => handleInvestmentsChange(Number(e.target.value))}
                     className="w-full h-3 bg-warmBg-primary rounded-lg appearance-none cursor-pointer accent-warmData-investment"
                     style={{
-                      background: `linear-gradient(to right, #FFB74D 0%, #FFB74D ${investmentsPercentage}%, #2A2420 ${investmentsPercentage}%, #2A2420 100%)`
+                      background: `linear-gradient(to right, #A78BFA 0%, #A78BFA ${investmentsPercentage}%, #1A1E26 ${investmentsPercentage}%, #1A1E26 100%)`
                     }}
                   />
                 </div>

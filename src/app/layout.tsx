@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { AuthProvider } from '@/contexts/AuthContext'
-import { Toaster } from 'react-hot-toast'
+import AppLayout from '@/components/layout/AppLayout'
+import ResponsiveToaster from '@/components/ResponsiveToaster'
 
 export const metadata: Metadata = {
   title: 'Financial Life Planner',
@@ -17,29 +18,10 @@ export default function RootLayout({
     <html lang="it">
       <body className="bg-warmBg-primary text-warmText-primary">
         <AuthProvider>
-          {children}
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              style: {
-                background: '#231D19',
-                color: '#FAFAF8',
-                border: '1px solid #2A2420',
-              },
-              success: {
-                iconTheme: {
-                  primary: '#66BB6A',
-                  secondary: '#FAFAF8',
-                },
-              },
-              error: {
-                iconTheme: {
-                  primary: '#EF6C4D',
-                  secondary: '#FAFAF8',
-                },
-              },
-            }}
-          />
+          <AppLayout>
+            {children}
+          </AppLayout>
+          <ResponsiveToaster />
         </AuthProvider>
       </body>
     </html>

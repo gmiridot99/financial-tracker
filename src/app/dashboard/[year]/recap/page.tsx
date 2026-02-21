@@ -6,10 +6,16 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, ArrowLeft, TrendingUp, Wallet, RefreshCw, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { calculateWealthForYear } from '@/lib/wealth';
-import AnnualTrendChart, { MonthlyData } from '@/components/AnnualTrendChart';
-import AnnualInsights, { AnnualInsightsData } from '@/components/AnnualInsights';
-import CategoryBreakdownChart, { CategoryData } from '@/components/CategoryBreakdownChart';
-import YearComparisonCards, { YearComparison, MultiYearInsights } from '@/components/YearComparisonCards';
+import dynamic from 'next/dynamic';
+import type { MonthlyData } from '@/components/AnnualTrendChart';
+import type { AnnualInsightsData } from '@/components/AnnualInsights';
+import type { CategoryData } from '@/components/CategoryBreakdownChart';
+import type { YearComparison, MultiYearInsights } from '@/components/YearComparisonCards';
+
+const AnnualTrendChart = dynamic(() => import('@/components/AnnualTrendChart'), { ssr: false });
+const AnnualInsights = dynamic(() => import('@/components/AnnualInsights'), { ssr: false });
+const CategoryBreakdownChart = dynamic(() => import('@/components/CategoryBreakdownChart'), { ssr: false });
+const YearComparisonCards = dynamic(() => import('@/components/YearComparisonCards'), { ssr: false });
 import toast from 'react-hot-toast';
 
 interface Transaction {
@@ -301,6 +307,9 @@ export default function RecapPage() {
       const txYear = new Date(t.start_date).getFullYear();
       const summary = yearMap.get(txYear);
       if (!summary) return;
+
+      // Exclude investment transactions from income/expenses (same as single-year)
+      if (t.category_name === 'Investimenti') return;
 
       if (t.type === 'income') {
         summary.income += t.amount;

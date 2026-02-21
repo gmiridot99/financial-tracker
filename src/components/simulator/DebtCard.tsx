@@ -75,17 +75,17 @@ export default function DebtCard({ debt, startYear, onEdit, onDelete }: DebtCard
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity ml-4">
+        <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity ml-4">
           <button
             onClick={() => onEdit(debt)}
-            className="p-2 text-warmText-tertiary hover:text-warmData-expense hover:bg-warmData-expense hover:bg-opacity-10 rounded-lg transition-colors"
+            className="p-3 md:p-2 text-warmText-tertiary hover:text-warmData-expense hover:bg-warmData-expense hover:bg-opacity-10 rounded-lg transition-colors"
             title="Modifica"
           >
             <Edit2 className="w-4 h-4" />
           </button>
           <button
             onClick={() => onDelete(debt.id)}
-            className="p-2 text-warmText-tertiary hover:text-warmData-expense hover:bg-warmData-expense hover:bg-opacity-10 rounded-lg transition-colors"
+            className="p-3 md:p-2 text-warmText-tertiary hover:text-warmData-expense hover:bg-warmData-expense hover:bg-opacity-10 rounded-lg transition-colors"
             title="Elimina"
           >
             <Trash2 className="w-4 h-4" />

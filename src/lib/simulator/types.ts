@@ -44,6 +44,7 @@ export interface Milestones {
 
 export interface MilestoneData {
   salary: number; // monthly salary at this milestone
+  investment: number; // monthly investment amount at this milestone
 }
 
 export interface ExpenseRow {

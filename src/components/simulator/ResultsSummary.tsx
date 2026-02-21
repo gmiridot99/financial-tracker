@@ -104,10 +104,10 @@ export default function ResultsSummary({ result, inflationRate, startYear }: Res
           <div className="text-xl font-bold text-[#a78bfa]">
             {formatCurrency(investments)}
           </div>
-          <div className="text-xs text-warmText-disabled mt-1">
+          <div className="text-xs text-warmText-tertiary mt-1">
             {((investments / netWealth) * 100).toFixed(1)}% del totale
           </div>
-          <div className="text-xs text-warmText-disabled mt-1">
+          <div className="text-xs text-warmText-tertiary mt-1 hidden md:block">
             ETF, azioni, fondi, obbligazioni
           </div>
         </div>
@@ -121,10 +121,10 @@ export default function ResultsSummary({ result, inflationRate, startYear }: Res
           <div className="text-xl font-bold text-warmData-savings">
             {formatCurrency(savings)}
           </div>
-          <div className="text-xs text-warmText-disabled mt-1">
+          <div className="text-xs text-warmText-tertiary mt-1">
             {((savings / netWealth) * 100).toFixed(1)}% del totale
           </div>
-          <div className="text-xs text-warmText-disabled mt-1">
+          <div className="text-xs text-warmText-tertiary mt-1 hidden md:block">
             Conto corrente, depositi, contanti
           </div>
         </div>
@@ -138,10 +138,10 @@ export default function ResultsSummary({ result, inflationRate, startYear }: Res
           <div className="text-xl font-bold text-warmData-investment">
             {formatCurrency(totalAssets)}
           </div>
-          <div className="text-xs text-warmText-disabled mt-1">
+          <div className="text-xs text-warmText-tertiary mt-1">
             {totalAssets > 0 ? `${((totalAssets / (netWealth + totalDebts)) * 100).toFixed(1)}% del totale` : 'Nessuno'}
           </div>
-          <div className="text-xs text-warmText-disabled mt-1">
+          <div className="text-xs text-warmText-tertiary mt-1 hidden md:block">
             Case, terreni, immobili di propriet&agrave;
           </div>
         </div>
@@ -155,10 +155,10 @@ export default function ResultsSummary({ result, inflationRate, startYear }: Res
           <div className="text-xl font-bold text-warmData-expense">
             {totalDebts > 0 ? `-${formatCurrency(totalDebts)}` : '\u20AC0'}
           </div>
-          <div className="text-xs text-warmText-disabled mt-1">
+          <div className="text-xs text-warmText-tertiary mt-1">
             {totalDebts > 0 ? 'Da saldare' : 'Nessuno'}
           </div>
-          <div className="text-xs text-warmText-disabled mt-1">
+          <div className="text-xs text-warmText-tertiary mt-1 hidden md:block">
             Mutui, prestiti, finanziamenti
           </div>
         </div>

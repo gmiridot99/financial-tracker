@@ -39,8 +39,8 @@ export default function SaveSimulationDialog({ onClose, onSave }: SaveSimulation
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-warmBg-secondary rounded-2xl border border-warmBg-tertiary max-w-md w-full p-6">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center sm:justify-center sm:p-4">
+      <div className="bg-warmBg-secondary border border-warmBg-tertiary w-full h-full flex flex-col p-6 sm:h-auto sm:max-w-md sm:rounded-2xl animate-sheetSlideUp sm:animate-none">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-warmText-primary">
             Salva Simulazione
@@ -72,7 +72,7 @@ export default function SaveSimulationDialog({ onClose, onSave }: SaveSimulation
           </p>
         </div>
 
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex items-center justify-end gap-3 mt-auto sm:mt-0">
           <button
             onClick={onClose}
             disabled={isSaving}

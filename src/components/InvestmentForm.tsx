@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PlusCircle } from 'lucide-react';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import Link from 'next/link';
 
 const investmentSchema = z.object({
   amount: z.string().min(1, 'Importo richiesto').refine((val) => {
@@ -25,6 +26,12 @@ const investmentSchema = z.object({
   path: ['frequency'],
 });
 
+interface InvestmentAccount {
+  id: string;
+  name: string;
+  cash_balance: number;
+}
+
 interface InvestmentFormProps {
   onSuccess: () => void;
   defaultDate: string;
@@ -39,6 +46,25 @@ export default function InvestmentForm({ onSuccess, defaultDate }: InvestmentFor
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency, setFrequency] = useState<'monthly' | 'annual' | 'one-time'>('one-time');
   const [error, setError] = useState('');
+  const [selectedInvestmentAccountId, setSelectedInvestmentAccountId] = useState('');
+  const [investmentAccounts, setInvestmentAccounts] = useState<InvestmentAccount[]>([]);
+
+  const loadInvestmentAccounts = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('investment_accounts')
+      .select('id, name, cash_balance')
+      .eq('user_id', user.id)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    setInvestmentAccounts(data || []);
+  }, [user]);
+
+  useEffect(() => {
+    if (isExpanded) {
+      loadInvestmentAccounts();
+    }
+  }, [isExpanded, loadInvestmentAccounts]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,6 +81,12 @@ export default function InvestmentForm({ onSuccess, defaultDate }: InvestmentFor
 
       if (!user) {
         throw new Error('Utente non autenticato');
+      }
+
+      if (!selectedInvestmentAccountId) {
+        setError('Seleziona un conto investimento');
+        setIsLoading(false);
+        return;
       }
 
       const amountNum = parseFloat(validated.amount.replace(',', '.'));
@@ -87,8 +119,8 @@ export default function InvestmentForm({ onSuccess, defaultDate }: InvestmentFor
         investmentCategoryId = newCategory.id;
       }
 
-      // Create transaction as expense with investment category
-      const { error } = await supabase
+      // Record the asset buy transaction (cash is already in the account via TransferForm)
+      const { error: transactionError } = await supabase
         .from('transactions')
         .insert({
           user_id: user.id,
@@ -100,9 +132,14 @@ export default function InvestmentForm({ onSuccess, defaultDate }: InvestmentFor
           frequency: validated.is_recurring ? validated.frequency : 'one-time',
           start_date: defaultDate,
           description: validated.description || 'Investimento',
+          investment_account_id: selectedInvestmentAccountId,
         });
 
-      if (error) throw error;
+      if (transactionError) {
+        toast.error('Errore nel salvataggio');
+        setIsLoading(false);
+        return;
+      }
 
       toast.success('Investimento registrato!');
       onSuccess();
@@ -112,12 +149,13 @@ export default function InvestmentForm({ onSuccess, defaultDate }: InvestmentFor
       setDescription('');
       setIsRecurring(false);
       setFrequency('one-time');
+      setSelectedInvestmentAccountId('');
       setIsExpanded(false);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        setError(error.errors[0].message);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        setError(err.errors[0].message);
       } else {
-        console.error('Error saving investment:', error);
+        console.error('Error saving investment:', err);
         toast.error('Errore durante il salvataggio');
       }
     } finally {
@@ -134,13 +172,15 @@ export default function InvestmentForm({ onSuccess, defaultDate }: InvestmentFor
         <div className="flex items-center gap-2">
           <PlusCircle className="w-5 h-5 text-warmData-investment" />
           <span className="text-sm font-normal text-warmData-investment">
-            Registra investimento...
+            Registra acquisto asset...
           </span>
         </div>
         <span className="text-xs font-medium text-warmData-investment">EUR</span>
       </button>
     );
   }
+
+  const noAccounts = investmentAccounts.length === 0;
 
   return (
     <form
@@ -152,6 +192,7 @@ export default function InvestmentForm({ onSuccess, defaultDate }: InvestmentFor
           <input
             name="amount"
             type="text"
+            inputMode="decimal"
             placeholder="500,00"
             value={amount}
             onChange={(e) => {
@@ -169,6 +210,39 @@ export default function InvestmentForm({ onSuccess, defaultDate }: InvestmentFor
             onChange={(e) => setDescription(e.target.value)}
             className="h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmData-investment placeholder:text-warmText-disabled"
           />
+        </div>
+
+        {/* Conto investimento */}
+        <div>
+          <label className="block text-xs font-medium text-warmText-tertiary mb-1">
+            Conto investimento *
+          </label>
+          {noAccounts ? (
+            <div className="h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted flex items-center justify-between">
+              <span className="text-sm text-warmText-disabled">Nessun conto investimento</span>
+              <Link
+                href="/dashboard/patrimonio"
+                className="text-xs text-warmAccent-primary hover:text-warmAccent-hover font-medium"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Crea in Patrimonio →
+              </Link>
+            </div>
+          ) : (
+            <select
+              value={selectedInvestmentAccountId}
+              onChange={(e) => {
+                setSelectedInvestmentAccountId(e.target.value);
+                setError('');
+              }}
+              className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmData-investment appearance-none"
+            >
+              <option value="">Seleziona conto...</option>
+              {investmentAccounts.map(acc => (
+                <option key={acc.id} value={acc.id}>{acc.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Recurring Options */}
@@ -231,10 +305,10 @@ export default function InvestmentForm({ onSuccess, defaultDate }: InvestmentFor
           </button>
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || noAccounts || !selectedInvestmentAccountId}
             className="h-11 px-8 bg-warmData-investment text-warmBg-primary rounded-full text-sm font-semibold hover:opacity-90 transition-all active:scale-95 disabled:opacity-50"
           >
-            {isLoading ? 'Salvataggio...' : 'Registra Investimento'}
+            {isLoading ? 'Salvataggio...' : 'Registra Acquisto'}
           </button>
         </div>
       </div>

@@ -95,7 +95,7 @@ export default function LoginPage() {
                 required
                 value={formData.email}
                 onChange={handleChange}
-                className="w-full px-4 py-3 bg-warmBg-primary border border-warmText-muted rounded-xl text-warmText-primary placeholder:text-warmText-disabled focus:outline-none focus:border-warmAccent-primary transition-colors"
+                className="w-full px-4 py-3 bg-warmBg-primary border border-warmText-muted rounded-xl text-base md:text-sm text-warmText-primary placeholder:text-warmText-disabled focus:outline-none focus:border-warmAccent-primary transition-colors"
                 placeholder="tua@email.com"
               />
               {errors.email && (
@@ -115,7 +115,7 @@ export default function LoginPage() {
                 required
                 value={formData.password}
                 onChange={handleChange}
-                className="w-full px-4 py-3 bg-warmBg-primary border border-warmText-muted rounded-xl text-warmText-primary placeholder:text-warmText-disabled focus:outline-none focus:border-warmAccent-primary transition-colors"
+                className="w-full px-4 py-3 bg-warmBg-primary border border-warmText-muted rounded-xl text-base md:text-sm text-warmText-primary placeholder:text-warmText-disabled focus:outline-none focus:border-warmAccent-primary transition-colors"
                 placeholder="••••••••"
               />
               {errors.password && (

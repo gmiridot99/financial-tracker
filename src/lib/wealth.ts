@@ -1,124 +1,94 @@
 import { supabase } from './supabase';
-import type { WealthSnapshot } from '@/types/database';
+import type { WealthSnapshot, Transfer } from '@/types/database';
+import { computeHoldings } from '@/lib/portfolio';
+import type { PortfolioTransaction } from '@/lib/portfolio';
+
+// --- Types ---
+
+/** Tipo per il risultato della query Supabase con join su categories */
+type TransactionWithCategory = {
+  amount: number;
+  type: string;
+  start_date: string;
+  categories: { name: string } | null;
+};
+
+/** Transazione normalizzata per il calcolo del delta mensile */
+type NormalizedTransaction = {
+  amount: number;
+  type: string;
+  categoryName: string;
+};
+
+// --- Funzioni di calcolo pure ---
 
 /**
- * Calculate wealth (investments and savings) for a specific month.
+ * Calcola il delta mensile di investimenti e risparmi da transazioni e trasferimenti.
  *
- * Logic:
- * 1. Check if manual snapshot exists for this month
- * 2. If no snapshot: get previous month's snapshot as base
- * 3. Calculate transactions for current month ("Investimenti" category)
- * 4. Sum: base + transactions = total for month
+ * Transazioni legacy (categorie):
+ *   expense → aggiunge al pool (soldi che entrano nel pool)
+ *   income → sottrae dal pool (soldi che escono/prelievi)
  *
- * @param userId - The user's ID
- * @param year - The year (e.g., 2026)
- * @param month - The month (1-12)
- * @returns Object with investments and savings balances
+ * Trasferimenti (nuovo sistema):
+ *   savings → investment: savings -= amount, investments += amount
+ *   savings → savings: nessun effetto sul totale wealth (pool invariato)
+ */
+function computeMonthDelta(
+  transactions: NormalizedTransaction[] | undefined,
+  transfers: Pick<Transfer, 'amount' | 'to_savings_account_id' | 'to_investment_account_id'>[] = []
+): { investments: number; savings: number } {
+  let investments = 0;
+  let savings = 0;
+
+  if (transactions) {
+    for (const t of transactions) {
+      const sign = t.type === 'expense' ? 1 : -1;
+      if (t.categoryName === 'Investimenti') {
+        investments += sign * t.amount;
+      }
+      if (t.categoryName === 'Risparmi') {
+        savings += sign * t.amount;
+      }
+    }
+  }
+
+  for (const tr of transfers) {
+    const amount = Number(tr.amount);
+    if (tr.to_investment_account_id) {
+      // savings → investment: money leaves savings pool, enters investment pool
+      savings -= amount;
+      investments += amount;
+    }
+    // savings → savings: no net wealth change
+  }
+
+  return { investments, savings };
+}
+
+// --- Funzioni pubbliche ---
+
+/**
+ * Calcola il patrimonio (investimenti e risparmi) per un mese specifico.
+ *
+ * Delega a calculateWealthForYears per evitare ricorsione e massimizzare
+ * l'efficienza delle query DB (max 3 query).
+ *
+ * @param userId - ID utente
+ * @param year - Anno (es. 2026)
+ * @param month - Mese (1-12)
+ * @returns Oggetto con bilanci investimenti e risparmi
  */
 export async function calculateWealthForMonth(
   userId: string,
   year: number,
   month: number
 ): Promise<{ investments: number; savings: number }> {
-  try {
-    // 1. Check if manual snapshot exists for this month
-    const { data: currentSnapshot, error: snapshotError } = await supabase
-      .from('wealth_snapshots')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('year', year)
-      .eq('month', month)
-      .maybeSingle();
-
-    if (snapshotError) {
-      console.error('Error fetching wealth snapshot:', snapshotError);
-    }
-
-    // If manual snapshot exists, use it as base
-    let baseInvestments = 0;
-    let baseSavings = 0;
-
-    if (currentSnapshot) {
-      baseInvestments = Number(currentSnapshot.investments_balance);
-      baseSavings = Number(currentSnapshot.savings_balance);
-    } else {
-      // 2. No snapshot for this month - get previous month's wealth
-      const prevMonth = month === 1 ? 12 : month - 1;
-      const prevYear = month === 1 ? year - 1 : year;
-
-      // Recursively calculate previous month's wealth
-      if (prevYear >= 2000) {
-        const prevWealth = await calculateWealthForMonth(userId, prevYear, prevMonth);
-        baseInvestments = prevWealth.investments;
-        baseSavings = prevWealth.savings;
-      }
-    }
-
-    // 3. Calculate transactions for current month
-    // Get start and end dates for the month
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0); // Last day of month
-
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
-
-    // Query transactions for "Investimenti" category
-    const { data: transactions, error: transError } = await supabase
-      .from('transactions')
-      .select('amount, type, categories!inner(name)')
-      .eq('user_id', userId)
-      .gte('start_date', startDateStr)
-      .lte('start_date', endDateStr);
-
-    if (transError) {
-      console.error('Error fetching transactions:', transError);
-      return { investments: baseInvestments, savings: baseSavings };
-    }
-
-    // Calculate monthly investment transactions
-    let monthlyInvestments = 0;
-    let monthlySavings = 0;
-
-    if (transactions) {
-      for (const transaction of transactions) {
-        const categoryName = (transaction as any).categories?.name;
-        const amount = Number(transaction.amount);
-        const type = transaction.type;
-
-        // For investments category
-        if (categoryName === 'Investimenti') {
-          if (type === 'expense') {
-            // Expense means money going into investments (positive contribution)
-            monthlyInvestments += amount;
-          } else if (type === 'income') {
-            // Income from investments (dividends, etc.) - also adds to balance
-            monthlyInvestments += amount;
-          }
-        }
-
-        // For savings category (if it exists in the future)
-        if (categoryName === 'Risparmi') {
-          if (type === 'expense') {
-            monthlySavings += amount;
-          } else if (type === 'income') {
-            monthlySavings += amount;
-          }
-        }
-      }
-    }
-
-    // 4. Sum: base + transactions = total
-    const totalInvestments = baseInvestments + monthlyInvestments;
-    const totalSavings = baseSavings + monthlySavings;
-
-    return {
-      investments: Math.round(totalInvestments * 100) / 100,
-      savings: Math.round(totalSavings * 100) / 100,
-    };
-  } catch (error) {
-    console.error('Error calculating wealth:', error);
+  const result = await calculateWealthForYears(userId, [year]);
+  const yearData = result.get(year);
+  if (!yearData || month < 1 || month > 12) {
     return { investments: 0, savings: 0 };
   }
+  return yearData[month - 1];
 }
 
 /**
@@ -181,213 +151,32 @@ export async function upsertWealthSnapshot(
 }
 
 /**
- * Calculate wealth for all 12 months of a year in a single batch.
+ * Calcola il patrimonio per tutti i 12 mesi di un anno.
+ * Wrapper su calculateWealthForYears per singolo anno.
  *
- * Performance optimization for the annual recap page. Instead of calling
- * calculateWealthForMonth() 12 times (each of which recurses backward),
- * this function:
- * 1. Fetches all snapshots for the year in ONE query
- * 2. Finds the most recent snapshot before the year (the "base") in ONE query
- * 3. Fetches all relevant transactions in at most TWO queries
- * 4. Iterates forward month-by-month in memory (no recursion, no extra DB calls)
- *
- * @returns Array of 12 objects (index 0 = January, index 11 = December)
+ * @returns Array di 12 oggetti (indice 0 = Gennaio, indice 11 = Dicembre)
  */
 export async function calculateWealthForYear(
   userId: string,
   year: number
 ): Promise<Array<{ investments: number; savings: number }>> {
-  try {
-    // 1. Fetch all snapshots for the target year (one query)
-    const { data: yearSnapshots, error: yearSnapError } = await supabase
-      .from('wealth_snapshots')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('year', year)
-      .order('month', { ascending: true });
-
-    if (yearSnapError) {
-      console.error('Error fetching year snapshots:', yearSnapError);
-    }
-
-    // Index snapshots by month for O(1) lookup
-    const snapshotByMonth = new Map<number, { investments_balance: number; savings_balance: number }>();
-    if (yearSnapshots) {
-      for (const snap of yearSnapshots) {
-        snapshotByMonth.set(snap.month, snap);
-      }
-    }
-
-    // 2. Find the most recent snapshot BEFORE this year to establish baseline.
-    //    We look for the latest snapshot with (year < targetYear) OR nothing.
-    const { data: prevSnapshot, error: prevSnapError } = await supabase
-      .from('wealth_snapshots')
-      .select('*')
-      .eq('user_id', userId)
-      .lt('year', year)
-      .order('year', { ascending: false })
-      .order('month', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (prevSnapError) {
-      console.error('Error fetching previous snapshot:', prevSnapError);
-    }
-
-    // 3. Determine the date range for transactions we need.
-    //    We need transactions from (prevSnapshot month+1) through Dec of target year.
-    //    If no previous snapshot, we need everything from year 2000-01 onward (but only
-    //    investment/savings categories matter, so the query is bounded).
-    let transStartDate: string;
-    if (prevSnapshot) {
-      // Start from the month AFTER the previous snapshot
-      const nextMonth = prevSnapshot.month === 12 ? 1 : prevSnapshot.month + 1;
-      const nextYear = prevSnapshot.month === 12 ? prevSnapshot.year + 1 : prevSnapshot.year;
-      transStartDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
-    } else {
-      transStartDate = '2000-01-01';
-    }
-    const transEndDate = `${year}-12-31`;
-
-    // 4. Fetch all relevant transactions in ONE query
-    const { data: allTransactions, error: transError } = await supabase
-      .from('transactions')
-      .select('amount, type, start_date, categories!inner(name)')
-      .eq('user_id', userId)
-      .gte('start_date', transStartDate)
-      .lte('start_date', transEndDate);
-
-    if (transError) {
-      console.error('Error fetching transactions:', transError);
-    }
-
-    // 5. Group transactions by (year, month) for efficient lookup
-    const transactionsByYearMonth = new Map<string, Array<{ amount: number; type: string; categoryName: string }>>();
-    if (allTransactions) {
-      for (const t of allTransactions) {
-        const date = new Date(t.start_date);
-        const tYear = date.getFullYear();
-        const tMonth = date.getMonth() + 1;
-        const key = `${tYear}-${tMonth}`;
-        if (!transactionsByYearMonth.has(key)) {
-          transactionsByYearMonth.set(key, []);
-        }
-        transactionsByYearMonth.get(key)!.push({
-          amount: Number(t.amount),
-          type: t.type,
-          categoryName: (t as any).categories?.name || '',
-        });
-      }
-    }
-
-    // Helper: compute investment/savings delta for a set of transactions
-    const computeMonthDelta = (
-      transactions: Array<{ amount: number; type: string; categoryName: string }> | undefined
-    ): { investments: number; savings: number } => {
-      let investments = 0;
-      let savings = 0;
-      if (!transactions) return { investments, savings };
-
-      for (const t of transactions) {
-        if (t.categoryName === 'Investimenti') {
-          investments += t.amount; // Both expense and income add to balance
-        }
-        if (t.categoryName === 'Risparmi') {
-          savings += t.amount;
-        }
-      }
-      return { investments, savings };
-    };
-
-    // 6. Establish the base (wealth at the end of the month of the previous snapshot)
-    let baseInvestments = 0;
-    let baseSavings = 0;
-    let baseYear = 2000;
-    let baseMonth = 0; // 0 means "before Jan 2000" i.e. start from scratch
-
-    if (prevSnapshot) {
-      baseInvestments = Number(prevSnapshot.investments_balance);
-      baseSavings = Number(prevSnapshot.savings_balance);
-      baseYear = prevSnapshot.year;
-      baseMonth = prevSnapshot.month;
-    }
-
-    // 7. Walk forward from baseMonth to Dec of the previous year,
-    //    applying transactions and respecting any snapshots in the target year.
-    //    First, compute carry-forward from base to end of (year-1).
-    let currentInvestments = baseInvestments;
-    let currentSavings = baseSavings;
-
-    // Walk from (baseYear, baseMonth+1) to (year-1, 12)
-    // to accumulate transactions between the base snapshot and the start of our target year
-    let walkYear = baseYear;
-    let walkMonth = baseMonth + 1;
-    if (walkMonth > 12) {
-      walkMonth = 1;
-      walkYear++;
-    }
-
-    while (walkYear < year) {
-      const delta = computeMonthDelta(transactionsByYearMonth.get(`${walkYear}-${walkMonth}`));
-      currentInvestments += delta.investments;
-      currentSavings += delta.savings;
-
-      walkMonth++;
-      if (walkMonth > 12) {
-        walkMonth = 1;
-        walkYear++;
-      }
-    }
-
-    // 8. Now compute each month of the target year
-    const results: Array<{ investments: number; savings: number }> = [];
-
-    for (let month = 1; month <= 12; month++) {
-      // Check if there is a manual snapshot for this month
-      const snapshot = snapshotByMonth.get(month);
-
-      if (snapshot) {
-        // Manual snapshot overrides the running total
-        currentInvestments = Number(snapshot.investments_balance);
-        currentSavings = Number(snapshot.savings_balance);
-      }
-
-      // Add transactions for this month
-      const delta = computeMonthDelta(transactionsByYearMonth.get(`${year}-${month}`));
-      const monthInvestments = currentInvestments + delta.investments;
-      const monthSavings = currentSavings + delta.savings;
-
-      results.push({
-        investments: Math.round(monthInvestments * 100) / 100,
-        savings: Math.round(monthSavings * 100) / 100,
-      });
-
-      // Carry forward for next month
-      currentInvestments = monthInvestments;
-      currentSavings = monthSavings;
-    }
-
-    return results;
-  } catch (error) {
-    console.error('Error calculating wealth for year:', error);
-    return Array.from({ length: 12 }, () => ({ investments: 0, savings: 0 }));
-  }
+  const result = await calculateWealthForYears(userId, [year]);
+  return result.get(year) || Array.from({ length: 12 }, () => ({ investments: 0, savings: 0 }));
 }
 
 /**
- * Calculate wealth for multiple years in a single batch operation.
+ * Calcola il patrimonio per piu anni in un'unica operazione batch.
  *
- * Instead of calling calculateWealthForYear() N times (each making 3 queries),
- * this function uses exactly 3 queries total:
- * 1. Fetch ALL snapshots in [min(years), max(years)] range
- * 2. Fetch the baseline snapshot (latest before min(years))
- * 3. Fetch ALL transactions from baseline through max(years)
+ * Usa esattamente 3 query DB, indipendentemente dal numero di anni:
+ * 1. Fetch di TUTTI gli snapshot nell'intervallo [min(years), max(years)]
+ * 2. Fetch dello snapshot baseline (il piu recente prima di min(years))
+ * 3. Fetch di TUTTE le transazioni dal baseline a max(years)
  *
- * Then aggregates everything in-memory, carrying forward baselines between years.
+ * Poi aggrega tutto in memoria, portando avanti i bilanci tra gli anni.
  *
- * @param userId - The user's ID
- * @param years - Array of years to compute (e.g., [2024, 2025, 2026])
- * @returns Map where key = year, value = array of 12 monthly wealth objects
+ * @param userId - ID utente
+ * @param years - Array di anni da calcolare (es. [2024, 2025, 2026])
+ * @returns Map dove key = anno, value = array di 12 oggetti mensili
  */
 export async function calculateWealthForYears(
   userId: string,
@@ -445,7 +234,7 @@ export async function calculateWealthForYears(
     const transEndDate = `${maxYear}-12-31`;
 
     // Query 3: Fetch ALL transactions for the entire range
-    const { data: allTransactions, error: transError } = await supabase
+    const { data: rawTransactions, error: transError } = await supabase
       .from('transactions')
       .select('amount, type, start_date, categories!inner(name)')
       .eq('user_id', userId)
@@ -454,6 +243,18 @@ export async function calculateWealthForYears(
 
     if (transError) {
       console.error('Error fetching transactions:', transError);
+    }
+
+    // Query 4: Fetch ALL transfers for the entire range
+    const { data: rawTransfers, error: transferError } = await supabase
+      .from('transfers')
+      .select('amount, date, to_savings_account_id, to_investment_account_id')
+      .eq('user_id', userId)
+      .gte('date', transStartDate)
+      .lte('date', transEndDate);
+
+    if (transferError) {
+      console.error('Error fetching transfers:', transferError);
     }
 
     // Index snapshots by (year, month) for O(1) lookup
@@ -465,41 +266,38 @@ export async function calculateWealthForYears(
     }
 
     // Group transactions by (year, month)
-    const transactionsByYearMonth = new Map<string, Array<{ amount: number; type: string; categoryName: string }>>();
-    if (allTransactions) {
-      for (const t of allTransactions) {
-        const date = new Date(t.start_date);
-        const tYear = date.getFullYear();
-        const tMonth = date.getMonth() + 1;
-        const key = `${tYear}-${tMonth}`;
-        if (!transactionsByYearMonth.has(key)) {
-          transactionsByYearMonth.set(key, []);
-        }
-        transactionsByYearMonth.get(key)!.push({
-          amount: Number(t.amount),
-          type: t.type,
-          categoryName: (t as any).categories?.name || '',
-        });
+    // Supabase tipizza categories!inner come array, ma la relazione many-to-one
+    // restituisce un singolo oggetto a runtime. Usiamo unknown come ponte sicuro.
+    const allTransactions = (rawTransactions ?? []) as unknown as TransactionWithCategory[];
+    const transactionsByYearMonth = new Map<string, NormalizedTransaction[]>();
+    for (const t of allTransactions) {
+      const date = new Date(t.start_date);
+      const key = `${date.getFullYear()}-${date.getMonth() + 1}`;
+      if (!transactionsByYearMonth.has(key)) {
+        transactionsByYearMonth.set(key, []);
       }
+      transactionsByYearMonth.get(key)!.push({
+        amount: Number(t.amount),
+        type: t.type,
+        categoryName: t.categories?.name || '',
+      });
     }
 
-    // Helper: compute investment/savings delta for a month's transactions
-    const computeMonthDelta = (
-      transactions: Array<{ amount: number; type: string; categoryName: string }> | undefined
-    ): { investments: number; savings: number } => {
-      let investments = 0;
-      let savings = 0;
-      if (!transactions) return { investments, savings };
-      for (const t of transactions) {
-        if (t.categoryName === 'Investimenti') {
-          investments += t.amount;
-        }
-        if (t.categoryName === 'Risparmi') {
-          savings += t.amount;
-        }
+    // Group transfers by (year, month)
+    type TransferForDelta = Pick<Transfer, 'amount' | 'to_savings_account_id' | 'to_investment_account_id'>;
+    const transfersByYearMonth = new Map<string, TransferForDelta[]>();
+    for (const tr of (rawTransfers ?? [])) {
+      const date = new Date(tr.date);
+      const key = `${date.getFullYear()}-${date.getMonth() + 1}`;
+      if (!transfersByYearMonth.has(key)) {
+        transfersByYearMonth.set(key, []);
       }
-      return { investments, savings };
-    };
+      transfersByYearMonth.get(key)!.push({
+        amount: Number(tr.amount),
+        to_savings_account_id: tr.to_savings_account_id,
+        to_investment_account_id: tr.to_investment_account_id,
+      });
+    }
 
     // Establish the baseline
     let currentInvestments = 0;
@@ -523,7 +321,6 @@ export async function calculateWealthForYears(
     }
 
     while (walkYear < minYear) {
-      // Check if there's a snapshot that overrides the running total
       const snapKey = `${walkYear}-${walkMonth}`;
       const snap = snapshotByYearMonth.get(snapKey);
       if (snap) {
@@ -531,7 +328,7 @@ export async function calculateWealthForYears(
         currentSavings = Number(snap.savings_balance);
       }
 
-      const delta = computeMonthDelta(transactionsByYearMonth.get(snapKey));
+      const delta = computeMonthDelta(transactionsByYearMonth.get(snapKey), transfersByYearMonth.get(snapKey));
       currentInvestments += delta.investments;
       currentSavings += delta.savings;
 
@@ -542,9 +339,7 @@ export async function calculateWealthForYears(
       }
     }
 
-    // Now process each year from minYear to maxYear sequentially.
-    // Even if a year is not in the requested set, we still need to walk through
-    // it to maintain correct carry-forward.
+    // Process each year from minYear to maxYear sequentially
     const requestedYearsSet = new Set(years);
 
     for (let y = minYear; y <= maxYear; y++) {
@@ -559,7 +354,7 @@ export async function calculateWealthForYears(
           currentSavings = Number(snapshot.savings_balance);
         }
 
-        const delta = computeMonthDelta(transactionsByYearMonth.get(snapKey));
+        const delta = computeMonthDelta(transactionsByYearMonth.get(snapKey), transfersByYearMonth.get(snapKey));
         const monthInvestments = currentInvestments + delta.investments;
         const monthSavings = currentSavings + delta.savings;
 
@@ -580,7 +375,6 @@ export async function calculateWealthForYears(
     return result;
   } catch (error) {
     console.error('Error calculating wealth for years:', error);
-    // Return empty results for all requested years
     for (const y of years) {
       result.set(y, Array.from({ length: 12 }, () => ({ investments: 0, savings: 0 })));
     }
@@ -608,4 +402,143 @@ export async function getYearWealthSnapshots(
   }
 
   return data || [];
+}
+
+/**
+ * Calculates and upserts a wealth snapshot using real account data.
+ *
+ * investments_balance = sum(market_value of all holdings)
+ *                     + sum(cash_balance of all investment accounts)
+ *
+ * savings_balance = sum(balance of all savings accounts)
+ *
+ * If market prices are unavailable for a holding, falls back to cost basis.
+ * Upserts into wealth_snapshots for the current year/month with is_manual: false.
+ */
+export async function updateWealthSnapshotFromAccounts(userId: string): Promise<void> {
+  try {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    // 1. Fetch savings accounts balances
+    const { data: savingsAccounts, error: savingsError } = await supabase
+      .from('savings_accounts')
+      .select('balance')
+      .eq('user_id', userId);
+
+    if (savingsError) {
+      console.error('Error fetching savings accounts for snapshot:', savingsError);
+    }
+
+    const totalSavingsAccounts = (savingsAccounts ?? []).reduce(
+      (sum, a) => sum + Number(a.balance),
+      0
+    );
+
+    // 2. Fetch investment accounts (cash_balance)
+    const { data: investmentAccounts, error: investError } = await supabase
+      .from('investment_accounts')
+      .select('cash_balance')
+      .eq('user_id', userId);
+
+    if (investError) {
+      console.error('Error fetching investment accounts for snapshot:', investError);
+    }
+
+    const totalCashBalance = (investmentAccounts ?? []).reduce(
+      (sum, a) => sum + Number(a.cash_balance),
+      0
+    );
+
+    // 4. Fetch all investment transactions
+    const { data: investmentTxns, error: txnError } = await supabase
+      .from('investment_transactions')
+      .select('asset_symbol, asset_name, asset_type, transaction_type, quantity, price_per_unit, total_amount')
+      .eq('user_id', userId);
+
+    if (txnError) {
+      console.error('Error fetching investment transactions for snapshot:', txnError);
+    }
+
+    // 5. Compute holdings from transactions
+    const portfolioTransactions: PortfolioTransaction[] = (investmentTxns ?? []).map(t => ({
+      asset_symbol: t.asset_symbol,
+      asset_name: t.asset_name,
+      asset_type: t.asset_type,
+      transaction_type: t.transaction_type as 'buy' | 'sell',
+      quantity: Number(t.quantity),
+      price_per_unit: Number(t.price_per_unit),
+      total_amount: Number(t.total_amount),
+    }));
+
+    const holdings = computeHoldings(portfolioTransactions);
+
+    // 6. Look up current prices from asset_prices_cache
+    let totalHoldingsValue = 0;
+
+    if (holdings.length > 0) {
+      const symbols = holdings.map(h => h.symbol);
+
+      const { data: priceData, error: priceError } = await supabase
+        .from('asset_prices_cache')
+        .select('symbol, current_price')
+        .in('symbol', symbols);
+
+      if (priceError) {
+        console.error('Error fetching asset prices for snapshot:', priceError);
+      }
+
+      // Build symbol -> price map
+      const priceMap = new Map<string, number>();
+      if (priceData) {
+        for (const p of priceData) {
+          if (p.current_price != null) {
+            priceMap.set(p.symbol, Number(p.current_price));
+          }
+        }
+      }
+
+      // 7. Calculate market value for each holding, fallback to costBasis
+      for (const holding of holdings) {
+        const price = priceMap.get(holding.symbol);
+        if (price != null) {
+          totalHoldingsValue += holding.quantity * price;
+        } else {
+          // Fallback to cost basis when market price unavailable
+          totalHoldingsValue += holding.costBasis;
+        }
+      }
+    }
+
+    // 8. Sum everything up
+    const savingsBalance = Math.round(totalSavingsAccounts * 100) / 100;
+
+    const investmentsBalance = Math.round(
+      (totalHoldingsValue + totalCashBalance) * 100
+    ) / 100;
+
+    // 9. Upsert into wealth_snapshots
+    const { error: upsertError } = await supabase
+      .from('wealth_snapshots')
+      .upsert(
+        {
+          user_id: userId,
+          year,
+          month,
+          investments_balance: investmentsBalance,
+          savings_balance: savingsBalance,
+          is_manual: false,
+        },
+        {
+          onConflict: 'user_id,year,month',
+        }
+      );
+
+    if (upsertError) {
+      console.error('Error upserting wealth snapshot from accounts:', upsertError);
+    }
+  } catch (error) {
+    console.error('Error updating wealth snapshot from accounts:', error);
+  }
 }

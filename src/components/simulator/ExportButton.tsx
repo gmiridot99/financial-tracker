@@ -151,15 +151,14 @@ export default function ExportButton({ result, config }: ExportButtonProps) {
       if ('milestones' in config && config.milestones) {
         report += `CONFIGURAZIONE MILESTONE\n`;
         report += `------------------------\n`;
-        report += `Allocazione globale: ${config.allocationInvestments}% Inv / ${config.allocationSavings}% Sav\n`;
         report += `Rendimento Inv: ${config.investmentReturnRate}% | Sav: ${config.savingsReturnRate}%\n\n`;
-        report += `Milestone (Stipendio):\n`;
-        report += `  Anno 1:  €${config.milestones.year1.salary.toLocaleString('it-IT')}\n`;
-        report += `  Anno 5:  €${config.milestones.year5.salary.toLocaleString('it-IT')}\n`;
-        report += `  Anno 10: €${config.milestones.year10.salary.toLocaleString('it-IT')}\n`;
-        report += `  Anno 20: €${config.milestones.year20.salary.toLocaleString('it-IT')}\n`;
-        report += `  Anno 30: €${config.milestones.year30.salary.toLocaleString('it-IT')}\n`;
-        report += `  Anno 50: €${config.milestones.year50.salary.toLocaleString('it-IT')}\n\n`;
+        report += `Milestone (Stipendio / Investimento):\n`;
+        report += `  Anno 1:  €${config.milestones.year1.salary.toLocaleString('it-IT')} / €${(config.milestones.year1.investment ?? 0).toLocaleString('it-IT')}\n`;
+        report += `  Anno 5:  €${config.milestones.year5.salary.toLocaleString('it-IT')} / €${(config.milestones.year5.investment ?? 0).toLocaleString('it-IT')}\n`;
+        report += `  Anno 10: €${config.milestones.year10.salary.toLocaleString('it-IT')} / €${(config.milestones.year10.investment ?? 0).toLocaleString('it-IT')}\n`;
+        report += `  Anno 20: €${config.milestones.year20.salary.toLocaleString('it-IT')} / €${(config.milestones.year20.investment ?? 0).toLocaleString('it-IT')}\n`;
+        report += `  Anno 30: €${config.milestones.year30.salary.toLocaleString('it-IT')} / €${(config.milestones.year30.investment ?? 0).toLocaleString('it-IT')}\n`;
+        report += `  Anno 50: €${config.milestones.year50.salary.toLocaleString('it-IT')} / €${(config.milestones.year50.investment ?? 0).toLocaleString('it-IT')}\n\n`;
 
         if (config.expenseRows && config.expenseRows.length > 0) {
           report += `SPESE PER CATEGORIA\n`;

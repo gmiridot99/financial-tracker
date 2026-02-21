@@ -122,14 +122,14 @@ export default function SaleEventForm({
 
           {/* Info Message */}
           {availableAssets.length === 0 && (
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="p-4 bg-warmBg-tertiary border border-warmText-muted rounded-lg">
               <div className="flex gap-3">
-                <div className="text-amber-600">⚠️</div>
+                <div className="text-warmData-expense">⚠️</div>
                 <div>
-                  <div className="text-sm font-medium text-amber-900">
+                  <div className="text-sm font-medium text-warmText-primary">
                     Nessun asset disponibile
                   </div>
-                  <div className="text-sm text-amber-700 mt-1">
+                  <div className="text-sm text-warmText-secondary mt-1">
                     Aggiungi prima un evento di acquisto asset per poterlo vendere
                   </div>
                 </div>

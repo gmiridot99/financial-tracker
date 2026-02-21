@@ -50,7 +50,7 @@ export default function CategoryBreakdownChart({ data }: CategoryBreakdownChartP
   const total = chartData.reduce((sum, cat) => sum + cat.value, 0);
 
   return (
-    <div className="bg-warmBg-secondary rounded-2xl p-6">
+    <div className="bg-warmBg-secondary rounded-2xl p-4 md:p-6">
       <h3 className="text-lg font-semibold text-warmText-primary mb-4">
         Spese per Categoria
       </h3>
@@ -60,16 +60,11 @@ export default function CategoryBreakdownChart({ data }: CategoryBreakdownChartP
             data={chartData}
             cx="50%"
             cy="50%"
-            innerRadius={60}
-            outerRadius={100}
+            innerRadius={50}
+            outerRadius={85}
             fill="#8884d8"
             paddingAngle={2}
             dataKey="value"
-            label={(entry) => {
-              const percent = ((entry.value / total) * 100).toFixed(0);
-              return `${entry.name} (${percent}%)`;
-            }}
-            labelLine={{ stroke: '#6b7280', strokeWidth: 1 }}
           >
             {chartData.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -77,12 +72,21 @@ export default function CategoryBreakdownChart({ data }: CategoryBreakdownChartP
           </Pie>
           <Tooltip
             contentStyle={{
-              backgroundColor: '#ffffff',
-              border: '1px solid #e5e7eb',
+              backgroundColor: '#1A1E26',
+              border: '1px solid #232830',
               borderRadius: '8px',
-              fontSize: '12px'
+              fontSize: '12px',
+              color: '#F0F2F5'
             }}
             formatter={(value: number) => `€${value.toFixed(2)}`}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: '12px' }}
+            formatter={(value: string) => {
+              const entry = chartData.find(d => d.name === value);
+              const percent = entry ? ((entry.value / total) * 100).toFixed(0) : '0';
+              return `${value} (${percent}%)`;
+            }}
           />
         </PieChart>
       </ResponsiveContainer>

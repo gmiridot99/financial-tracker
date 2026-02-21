@@ -616,7 +616,7 @@ describe('Full Simulation', () => {
     // For now, test that it handles the structure
     const configWithoutSale: SimulationConfig = {
       ...config,
-      events: [config.events[0]],
+      events: [config.events![0]],
     };
 
     const result = simulate(configWithoutSale);

@@ -16,7 +16,9 @@ import {
 } from 'lucide-react';
 import { calculateWealthForYears } from '@/lib/wealth';
 import { supabase } from '@/lib/supabase';
-import MultiYearTrendChart, { YearlyDataPoint } from '@/components/MultiYearTrendChart';
+import dynamic from 'next/dynamic';
+import type { YearlyDataPoint } from '@/components/MultiYearTrendChart';
+const MultiYearTrendChart = dynamic(() => import('@/components/MultiYearTrendChart'), { ssr: false });
 import toast from 'react-hot-toast';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -367,7 +369,7 @@ function YearSelect({
         <select
           value={value}
           onChange={(e) => onChange(parseInt(e.target.value))}
-          className="appearance-none bg-warmBg-tertiary text-warmText-primary font-semibold text-lg pl-5 pr-10 py-3 rounded-2xl border border-warmText-muted/20 focus:border-warmAccent-primary focus:outline-none focus:ring-2 focus:ring-warmAccent-primary/20 transition-all cursor-pointer w-full min-w-[120px]"
+          className="appearance-none bg-warmBg-tertiary text-warmText-primary font-semibold text-base md:text-lg pl-5 pr-10 py-3 rounded-2xl border border-warmText-muted/20 focus:border-warmAccent-primary focus:outline-none focus:ring-2 focus:ring-warmAccent-primary/20 transition-all cursor-pointer w-full min-w-[120px]"
           aria-label={label}
         >
           {options.map((y) => (
@@ -908,7 +910,7 @@ function RecapMultiAnnoContent() {
                   </div>
                 </div>
 
-                <p className="text-4xl font-bold text-warmText-primary tracking-tight mb-2">
+                <p className="text-3xl md:text-4xl font-bold text-warmText-primary tracking-tight mb-2">
                   {aggregateStats.periodEnd.toLocaleString('it-IT', {
                     style: 'currency',
                     currency: 'EUR',

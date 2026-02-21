@@ -26,6 +26,57 @@ import {
   generateId,
 } from './calculations';
 
+// --- Private types for shared monthly simulation ---
+
+interface MonthlyState {
+  savings: number;
+  investments: number;
+  debts: Debt[];
+}
+
+interface MonthlyParams {
+  netCashFlow: number;
+  investmentReturnRate: number;
+  savingsReturnRate: number;
+  allocateSurplus: (availableCashFlow: number) => { toInvestments: number; toSavings: number };
+}
+
+/**
+ * Simulate a single month of cash flow, debt payments, surplus allocation, and interest.
+ * Shared by both legacy and milestone engines. Does not throw user-facing errors.
+ */
+function simulateMonth(state: MonthlyState, params: MonthlyParams): MonthlyState {
+  let { savings, investments } = state;
+  const debts = [...state.debts]; // shallow clone so caller's array is not mutated
+
+  // Calculate total debt payments
+  const monthlyDebtPayments = calculateTotalDebtPayments(debts);
+
+  // Available cash flow after debt payments
+  const availableCashFlow = params.netCashFlow - monthlyDebtPayments;
+
+  if (availableCashFlow < 0) {
+    ({ savings, investments } = withdrawFromAssets(
+      Math.abs(availableCashFlow),
+      savings,
+      investments
+    ));
+  } else {
+    const { toInvestments, toSavings } = params.allocateSurplus(availableCashFlow);
+    investments += toInvestments;
+    savings += toSavings;
+  }
+
+  // Apply monthly compound interest
+  investments = applyMonthlyInterest(investments, params.investmentReturnRate);
+  savings = applyMonthlyInterest(savings, params.savingsReturnRate);
+
+  // Update debts (amortization)
+  const updatedDebts = updateDebts(debts);
+
+  return { savings, investments, debts: updatedDebts };
+}
+
 /**
  * Run complete financial simulation
  * Supports both legacy phase-based and new milestone-based configs
@@ -96,52 +147,32 @@ function simulateLegacy(config: SimulationConfig): SimulationResult {
     }
 
     // 3. Simulate 12 months
-    let monthlyDebtPayments = 0;
     for (let month = 1; month <= 12; month++) {
-      // a. Calculate net cash flow (before debt payments)
-      const netCashFlow = phase.monthlyIncome - phase.monthlyExpenses;
-
-      // b. Calculate total debt payments
-      monthlyDebtPayments = calculateTotalDebtPayments(debts);
-
-      // c. Calculate available cash flow after debt payments
-      const availableCashFlow = netCashFlow - monthlyDebtPayments;
-
-      if (availableCashFlow < 0) {
-        // Need to withdraw from reserves
-        try {
-          ({ savings, investments } = withdrawFromAssets(
-            Math.abs(availableCashFlow),
-            savings,
-            investments
-          ));
-        } catch (error) {
-          throw new Error(
-            `Simulation failed at year ${year}, month ${month}: ${
-              error instanceof Error ? error.message : 'Cash flow deficit exceeded available reserves'
-            }`
-          );
-        }
-      } else {
-        // Distribute surplus according to phase allocation
-        const toInvestments =
-          availableCashFlow * (phase.allocationInvestments / 100);
-        const toSavings =
-          availableCashFlow * (phase.allocationSavings / 100);
-        investments += toInvestments;
-        savings += toSavings;
+      try {
+        const result = simulateMonth(
+          { savings, investments, debts },
+          {
+            netCashFlow: phase.monthlyIncome - phase.monthlyExpenses,
+            investmentReturnRate: phase.investmentReturnRate,
+            savingsReturnRate: phase.savingsReturnRate,
+            allocateSurplus: (available) => ({
+              toInvestments: available * (phase.allocationInvestments / 100),
+              toSavings: available * (phase.allocationSavings / 100),
+            }),
+          }
+        );
+        savings = result.savings;
+        investments = result.investments;
+        debts = result.debts;
+      } catch (error) {
+        throw new Error(
+          `Simulation failed at year ${year}, month ${month}: ${
+            error instanceof Error ? error.message : 'Cash flow deficit exceeded available reserves'
+          }`
+        );
       }
-
-      // d. Apply monthly compound interest
-      investments = applyMonthlyInterest(
-        investments,
-        phase.investmentReturnRate
-      );
-      savings = applyMonthlyInterest(savings, phase.savingsReturnRate);
-
-      // e. Update debts (amortization)
-      debts = updateDebts(debts);
     }
+    const monthlyDebtPayments = calculateTotalDebtPayments(debts);
 
     // 4. Appreciate assets (end of year)
     assets = appreciateAssets(assets);
@@ -307,56 +338,37 @@ function simulateMilestone(config: SimulationConfig): SimulationResult {
     const totalExpenses = interpolateExpenses(year, config.expenseRows || []);
 
     // 4. Simulate 12 months
-    let monthlyDebtPayments = 0;
+    const monthlyInvestment = milestone.investment ?? 0;
     for (let month = 1; month <= 12; month++) {
-      // a. Calculate net cash flow (before debt payments)
-      const netCashFlow = milestone.salary - totalExpenses;
-
-      // b. Calculate total debt payments
-      monthlyDebtPayments = calculateTotalDebtPayments(debts);
-
-      // c. Calculate available cash flow after debt payments
-      const availableCashFlow = netCashFlow - monthlyDebtPayments;
-
-      if (availableCashFlow < 0) {
-        // Need to withdraw from reserves
-        try {
-          ({ savings, investments } = withdrawFromAssets(
-            Math.abs(availableCashFlow),
-            savings,
-            investments
-          ));
-        } catch (error) {
-          throw new Error(
-            `Simulation failed at year ${year}, month ${month}: ${
-              error instanceof Error ? error.message : 'Cash flow deficit exceeded available reserves'
-            }`
-          );
-        }
-      } else {
-        // Distribute surplus according to global allocation
-        const toInvestments =
-          availableCashFlow * ((config.allocationInvestments || 60) / 100);
-        const toSavings =
-          availableCashFlow * ((config.allocationSavings || 40) / 100);
-        investments += toInvestments;
-        savings += toSavings;
+      try {
+        const result = simulateMonth(
+          { savings, investments, debts },
+          {
+            netCashFlow: milestone.salary - totalExpenses,
+            investmentReturnRate: config.investmentReturnRate ?? 7,
+            savingsReturnRate: config.savingsReturnRate ?? 1,
+            allocateSurplus: (available) => {
+              const toInvestments = Math.min(monthlyInvestment, available);
+              return { toInvestments, toSavings: available - toInvestments };
+            },
+          }
+        );
+        savings = result.savings;
+        investments = result.investments;
+        debts = result.debts;
+      } catch (error) {
+        throw new Error(
+          `Simulation failed at year ${year}, month ${month}: ${
+            error instanceof Error ? error.message : 'Cash flow deficit exceeded available reserves'
+          }`
+        );
       }
-
-      // d. Apply monthly compound interest
-      investments = applyMonthlyInterest(
-        investments,
-        config.investmentReturnRate || 7
-      );
-      savings = applyMonthlyInterest(savings, config.savingsReturnRate || 1);
-
-      // e. Update debts (amortization)
-      debts = updateDebts(debts);
 
       // Update map
       activeDebts.clear();
       debts.forEach(d => activeDebts.set(d.id, d));
     }
+    const monthlyDebtPayments = calculateTotalDebtPayments(debts);
 
     // 5. Appreciate assets (end of year)
     assets = appreciateAssets(assets);

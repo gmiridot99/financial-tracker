@@ -41,9 +41,10 @@ export default function LoadSimulationMenu({
 
   return (
     <>
-      <div className="fixed inset-0 z-10" onClick={onClose} />
+      <div className="fixed inset-0 z-10 bg-black/50 sm:bg-transparent" onClick={onClose} />
 
-      <div className="absolute right-0 mt-2 w-80 bg-warmBg-secondary rounded-lg border border-warmBg-tertiary z-20 overflow-hidden max-h-96 overflow-y-auto">
+      <div className="fixed inset-x-0 bottom-0 w-full rounded-t-2xl max-h-[70vh] pb-[env(safe-area-inset-bottom)] animate-sheetSlideUp sm:animate-none sm:absolute sm:inset-auto sm:right-0 sm:bottom-auto sm:mt-2 sm:w-80 sm:rounded-lg sm:max-h-96 sm:pb-0 bg-warmBg-secondary border border-warmBg-tertiary z-20 overflow-hidden overflow-y-auto">
+        <div className="w-12 h-1 bg-warmText-disabled rounded-full mx-auto mt-2 sm:hidden" />
         <div className="p-2">
           {simulations.length === 0 ? (
             <div className="p-6 text-center text-warmText-tertiary">
@@ -72,7 +73,7 @@ export default function LoadSimulationMenu({
                 <button
                   onClick={(e) => handleDelete(e, sim.id, sim.name)}
                   disabled={deletingId === sim.id}
-                  className="p-2 text-warmText-disabled hover:text-warmData-expense hover:bg-warmBg-primary rounded-md transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50 flex-shrink-0 ml-2"
+                  className="p-2 text-warmText-disabled hover:text-warmData-expense hover:bg-warmBg-primary rounded-md transition-colors sm:opacity-0 sm:group-hover:opacity-100 disabled:opacity-50 flex-shrink-0 ml-2"
                   title="Elimina"
                 >
                   {deletingId === sim.id ? (

@@ -235,7 +235,7 @@ export default function SimulatorChart({ result, events, inflationRate, startYea
           y={dataPoint.netWealth}
           r={6}
           fill={color}
-          stroke="#1A1714"
+          stroke="#0B0D11"
           strokeWidth={2}
         />
       );
@@ -285,21 +285,21 @@ export default function SimulatorChart({ result, events, inflationRate, startYea
 
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#2A2420"
+              stroke="#1A1E26"
             />
 
             <XAxis
               dataKey="year"
-              stroke="#8A7E76"
-              tick={{ fill: '#8A7E76', fontSize: 12 }}
-              label={{ value: 'Anno', position: 'insideBottom', offset: -10, fill: '#8A7E76' }}
+              stroke="#5A6474"
+              tick={{ fill: '#5A6474', fontSize: 12 }}
+              label={{ value: 'Anno', position: 'insideBottom', offset: -10, fill: '#5A6474' }}
             />
 
             <YAxis
-              stroke="#8A7E76"
-              tick={{ fill: '#8A7E76', fontSize: 12 }}
+              stroke="#5A6474"
+              tick={{ fill: '#5A6474', fontSize: 12 }}
               tickFormatter={formatCurrency}
-              label={{ value: 'Patrimonio (\u20AC)', angle: -90, position: 'insideLeft', fill: '#8A7E76' }}
+              label={{ value: 'Patrimonio (\u20AC)', angle: -90, position: 'insideLeft', fill: '#5A6474' }}
             />
 
             <Tooltip content={<CustomTooltip />} />

@@ -9,386 +9,19 @@ vi.mock('./supabase', () => ({
   },
 }));
 
-describe('calculateWealthForMonth', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should return manual snapshot values when snapshot exists', async () => {
-    // Mock both queries (snapshot and transactions)
-    const mockFrom = vi.fn()
-      // First call: snapshot query
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: {
-                    investments_balance: 10000,
-                    savings_balance: 5000,
-                  },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        }),
-      })
-      // Second call: transactions query
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            gte: vi.fn().mockReturnValue({
-              lte: vi.fn().mockResolvedValue({
-                data: [],
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      });
-
-    (supabase.from as any) = mockFrom;
-
-    const result = await calculateWealthForMonth('user-123', 2026, 1);
-
-    expect(result.investments).toBe(10000);
-    expect(result.savings).toBe(5000);
-  });
-
-  it('should return zeros when no snapshot and no previous month', async () => {
-    // Mock no snapshot for current month
-    const mockFrom = vi.fn()
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: null,
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        }),
-      })
-      // Mock transactions query
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            gte: vi.fn().mockReturnValue({
-              lte: vi.fn().mockResolvedValue({
-                data: [],
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      });
-
-    (supabase.from as any) = mockFrom;
-
-    const result = await calculateWealthForMonth('user-123', 2000, 1);
-
-    expect(result.investments).toBe(0);
-    expect(result.savings).toBe(0);
-  });
-
-  it('should add investment transactions to base amount', async () => {
-    // Mock snapshot with base values
-    const mockFrom = vi.fn()
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: {
-                    investments_balance: 10000,
-                    savings_balance: 5000,
-                  },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        }),
-      })
-      // Mock transactions with investment
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            gte: vi.fn().mockReturnValue({
-              lte: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    amount: 500,
-                    type: 'expense',
-                    categories: { name: 'Investimenti' },
-                  },
-                ],
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      });
-
-    (supabase.from as any) = mockFrom;
-
-    const result = await calculateWealthForMonth('user-123', 2026, 1);
-
-    expect(result.investments).toBe(10500); // 10000 + 500
-    expect(result.savings).toBe(5000);
-  });
-
-  it('should handle investment income (dividends)', async () => {
-    // Mock snapshot
-    const mockFrom = vi.fn()
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: {
-                    investments_balance: 10000,
-                    savings_balance: 5000,
-                  },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        }),
-      })
-      // Mock transactions with dividend income
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            gte: vi.fn().mockReturnValue({
-              lte: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    amount: 200,
-                    type: 'income',
-                    categories: { name: 'Investimenti' },
-                  },
-                ],
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      });
-
-    (supabase.from as any) = mockFrom;
-
-    const result = await calculateWealthForMonth('user-123', 2026, 1);
-
-    expect(result.investments).toBe(10200); // 10000 + 200 (dividend)
-    expect(result.savings).toBe(5000);
-  });
-
-  it('should handle multiple investment transactions', async () => {
-    // Mock snapshot
-    const mockFrom = vi.fn()
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: {
-                    investments_balance: 10000,
-                    savings_balance: 5000,
-                  },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        }),
-      })
-      // Mock multiple transactions
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            gte: vi.fn().mockReturnValue({
-              lte: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    amount: 500,
-                    type: 'expense',
-                    categories: { name: 'Investimenti' },
-                  },
-                  {
-                    amount: 300,
-                    type: 'expense',
-                    categories: { name: 'Investimenti' },
-                  },
-                  {
-                    amount: 100,
-                    type: 'income',
-                    categories: { name: 'Investimenti' },
-                  },
-                ],
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      });
-
-    (supabase.from as any) = mockFrom;
-
-    const result = await calculateWealthForMonth('user-123', 2026, 1);
-
-    expect(result.investments).toBe(10900); // 10000 + 500 + 300 + 100
-    expect(result.savings).toBe(5000);
-  });
-
-  it('should round to 2 decimal places', async () => {
-    // Mock snapshot with decimal values
-    const mockFrom = vi.fn()
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: {
-                    investments_balance: 10000.456,
-                    savings_balance: 5000.789,
-                  },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        }),
-      })
-      // Mock transactions
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            gte: vi.fn().mockReturnValue({
-              lte: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    amount: 100.123,
-                    type: 'expense',
-                    categories: { name: 'Investimenti' },
-                  },
-                ],
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      });
-
-    (supabase.from as any) = mockFrom;
-
-    const result = await calculateWealthForMonth('user-123', 2026, 1);
-
-    // Should round to 2 decimals
-    expect(result.investments).toBe(10100.58); // 10000.456 + 100.123 = 10100.579 → 10100.58
-    expect(result.savings).toBe(5000.79); // 5000.789 → 5000.79
-  });
-
-  it('should return zeros on error', async () => {
-    // Mock error in snapshot query
-    const mockFrom = vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              maybeSingle: vi.fn().mockResolvedValue({
-                data: null,
-                error: { message: 'Database error' },
-              }),
-            }),
-          }),
-        }),
-      }),
-    });
-
-    (supabase.from as any) = mockFrom;
-
-    const result = await calculateWealthForMonth('user-123', 2026, 1);
-
-    expect(result.investments).toBe(0);
-    expect(result.savings).toBe(0);
-  });
-
-  it('should ignore non-investment transactions', async () => {
-    // Mock snapshot
-    const mockFrom = vi.fn()
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: {
-                    investments_balance: 10000,
-                    savings_balance: 5000,
-                  },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        }),
-      })
-      // Mock transactions with non-investment categories
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            gte: vi.fn().mockReturnValue({
-              lte: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    amount: 500,
-                    type: 'expense',
-                    categories: { name: 'Cibo' },
-                  },
-                  {
-                    amount: 300,
-                    type: 'expense',
-                    categories: { name: 'Trasporti' },
-                  },
-                ],
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      });
-
-    (supabase.from as any) = mockFrom;
-
-    const result = await calculateWealthForMonth('user-123', 2026, 1);
-
-    // Should ignore non-investment transactions
-    expect(result.investments).toBe(10000);
-    expect(result.savings).toBe(5000);
-  });
-});
-
-// --- Helper to build chained Supabase mock for calculateWealthForYears ---
-// The function makes 3 calls to supabase.from():
+// --- Helper to build chained Supabase mock ---
+// Both calculateWealthForMonth (via delegation) and calculateWealthForYears
+// make exactly 4 calls to supabase.from():
 //   1. 'wealth_snapshots' -> .select().eq().gte().lte().order().order() -> { data, error }
 //   2. 'wealth_snapshots' -> .select().eq().lt().order().order().limit().maybeSingle() -> { data, error }
 //   3. 'transactions'     -> .select().eq().gte().lte() -> { data, error }
+//   4. 'transfers'        -> .select().eq().gte().lte() -> { data, error }
 
 function buildYearsMock(
   rangeSnapshots: any[] | null,
   baselineSnapshot: any | null,
-  transactions: any[] | null
+  transactions: any[] | null,
+  transfers: any[] | null = []
 ) {
   // Query 1: range snapshots - select().eq().gte().lte().order().order()
   const query1 = {
@@ -442,11 +75,148 @@ function buildYearsMock(
     }),
   };
 
+  // Query 4: transfers - select().eq().gte().lte()
+  const query4 = {
+    select: vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        gte: vi.fn().mockReturnValue({
+          lte: vi.fn().mockResolvedValue({
+            data: transfers,
+            error: null,
+          }),
+        }),
+      }),
+    }),
+  };
+
   return vi.fn()
     .mockReturnValueOnce(query1)
     .mockReturnValueOnce(query2)
-    .mockReturnValueOnce(query3);
+    .mockReturnValueOnce(query3)
+    .mockReturnValueOnce(query4);
 }
+
+// =============================================================================
+// calculateWealthForMonth
+// Ora delega a calculateWealthForYears → stessa struttura mock (3 query)
+// =============================================================================
+
+describe('calculateWealthForMonth', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should return manual snapshot values when snapshot exists', async () => {
+    (supabase.from as any) = buildYearsMock(
+      [{ year: 2026, month: 1, investments_balance: 10000, savings_balance: 5000 }],
+      null,
+      []
+    );
+
+    const result = await calculateWealthForMonth('user-123', 2026, 1);
+
+    expect(result.investments).toBe(10000);
+    expect(result.savings).toBe(5000);
+  });
+
+  it('should return zeros when no snapshot and no previous month', async () => {
+    (supabase.from as any) = buildYearsMock([], null, []);
+
+    const result = await calculateWealthForMonth('user-123', 2000, 1);
+
+    expect(result.investments).toBe(0);
+    expect(result.savings).toBe(0);
+  });
+
+  it('should add investment expense transactions to base amount', async () => {
+    (supabase.from as any) = buildYearsMock(
+      [{ year: 2026, month: 1, investments_balance: 10000, savings_balance: 5000 }],
+      null,
+      [{ amount: 500, type: 'expense', start_date: '2026-01-15', categories: { name: 'Investimenti' } }]
+    );
+
+    const result = await calculateWealthForMonth('user-123', 2026, 1);
+
+    expect(result.investments).toBe(10500); // 10000 + 500
+    expect(result.savings).toBe(5000);
+  });
+
+  it('should subtract investment income (vendita/prelievo) from balance', async () => {
+    // Income da Investimenti = prelievo/vendita → sottrae dal bilancio
+    (supabase.from as any) = buildYearsMock(
+      [{ year: 2026, month: 1, investments_balance: 10000, savings_balance: 5000 }],
+      null,
+      [{ amount: 200, type: 'income', start_date: '2026-01-15', categories: { name: 'Investimenti' } }]
+    );
+
+    const result = await calculateWealthForMonth('user-123', 2026, 1);
+
+    expect(result.investments).toBe(9800); // 10000 - 200 (income sottrae)
+    expect(result.savings).toBe(5000);
+  });
+
+  it('should handle multiple investment transactions with mixed types', async () => {
+    (supabase.from as any) = buildYearsMock(
+      [{ year: 2026, month: 1, investments_balance: 10000, savings_balance: 5000 }],
+      null,
+      [
+        { amount: 500, type: 'expense', start_date: '2026-01-15', categories: { name: 'Investimenti' } },
+        { amount: 300, type: 'expense', start_date: '2026-01-15', categories: { name: 'Investimenti' } },
+        { amount: 100, type: 'income', start_date: '2026-01-15', categories: { name: 'Investimenti' } },
+      ]
+    );
+
+    const result = await calculateWealthForMonth('user-123', 2026, 1);
+
+    expect(result.investments).toBe(10700); // 10000 + 500 + 300 - 100
+    expect(result.savings).toBe(5000);
+  });
+
+  it('should round to 2 decimal places', async () => {
+    (supabase.from as any) = buildYearsMock(
+      [{ year: 2026, month: 1, investments_balance: 10000.456, savings_balance: 5000.789 }],
+      null,
+      [{ amount: 100.123, type: 'expense', start_date: '2026-01-15', categories: { name: 'Investimenti' } }]
+    );
+
+    const result = await calculateWealthForMonth('user-123', 2026, 1);
+
+    expect(result.investments).toBe(10100.58); // 10000.456 + 100.123 = 10100.579 → 10100.58
+    expect(result.savings).toBe(5000.79); // 5000.789 → 5000.79
+  });
+
+  it('should return zeros on error', async () => {
+    // Qualsiasi errore nel batch fa scattare il catch → tutti zeri
+    (supabase.from as any) = vi.fn().mockImplementation(() => {
+      throw new Error('Database error');
+    });
+
+    const result = await calculateWealthForMonth('user-123', 2026, 1);
+
+    expect(result.investments).toBe(0);
+    expect(result.savings).toBe(0);
+  });
+
+  it('should ignore non-investment transactions', async () => {
+    (supabase.from as any) = buildYearsMock(
+      [{ year: 2026, month: 1, investments_balance: 10000, savings_balance: 5000 }],
+      null,
+      [
+        { amount: 500, type: 'expense', start_date: '2026-01-15', categories: { name: 'Cibo' } },
+        { amount: 300, type: 'expense', start_date: '2026-01-15', categories: { name: 'Trasporti' } },
+      ]
+    );
+
+    const result = await calculateWealthForMonth('user-123', 2026, 1);
+
+    expect(result.investments).toBe(10000);
+    expect(result.savings).toBe(5000);
+  });
+});
+
+// =============================================================================
+// calculateWealthForYears
+// =============================================================================
 
 describe('calculateWealthForYears', () => {
   beforeEach(() => {
@@ -633,13 +403,82 @@ describe('calculateWealthForYears', () => {
     expect(y2024[11].investments).toBe(1000); // Dec carry
   });
 
-  it('should use exactly 3 supabase.from() calls', async () => {
+  it('should use exactly 4 supabase.from() calls', async () => {
     const mockFrom = buildYearsMock([], null, []);
     (supabase.from as any) = mockFrom;
 
     await calculateWealthForYears('user-123', [2024, 2025, 2026]);
 
-    // Exactly 3 calls regardless of number of years
-    expect(mockFrom).toHaveBeenCalledTimes(3);
+    // Exactly 4 calls regardless of number of years
+    // (snapshots range, baseline snapshot, transactions, transfers)
+    expect(mockFrom).toHaveBeenCalledTimes(4);
+  });
+});
+
+// =============================================================================
+// FIX VERIFICATI
+// Questi test verificano che i bug risolti nel refactoring funzionino.
+// Prima del fix: FALLIVANO. Ora: PASSANO.
+// =============================================================================
+
+describe('[FIX] Income sottrae correttamente dal bilancio (non somma)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('income da "Investimenti" (vendita/prelievo) dovrebbe SOTTRARRE dal bilancio', async () => {
+    // Scenario: l'utente ha 10000 in investimenti e vende titoli per 2000.
+    // La vendita genera un "income" con categoria "Investimenti".
+    // Il bilancio investimenti deve DIMINUIRE: 10000 - 2000 = 8000.
+    (supabase.from as any) = buildYearsMock(
+      [{ year: 2026, month: 3, investments_balance: 10000, savings_balance: 5000 }],
+      null,
+      [{ amount: 2000, type: 'income', start_date: '2026-03-15', categories: { name: 'Investimenti' } }]
+    );
+
+    const result = await calculateWealthForMonth('user-123', 2026, 3);
+
+    // Prima del fix: 10000 + 2000 = 12000 (SBAGLIATO)
+    // Dopo il fix:   10000 - 2000 = 8000 (CORRETTO)
+    expect(result.investments).toBe(8000);
+  });
+
+  it('income da "Risparmi" (prelievo) dovrebbe SOTTRARRE dal bilancio', async () => {
+    // Scenario: l'utente ha 8000 in risparmi e preleva 1500.
+    // Il prelievo genera un "income" con categoria "Risparmi".
+    // Il bilancio risparmi deve DIMINUIRE: 8000 - 1500 = 6500.
+    (supabase.from as any) = buildYearsMock(
+      [{ year: 2026, month: 3, investments_balance: 5000, savings_balance: 8000 }],
+      null,
+      [{ amount: 1500, type: 'income', start_date: '2026-03-15', categories: { name: 'Risparmi' } }]
+    );
+
+    const result = await calculateWealthForMonth('user-123', 2026, 3);
+
+    // Prima del fix: 8000 + 1500 = 9500 (SBAGLIATO)
+    // Dopo il fix:   8000 - 1500 = 6500 (CORRETTO)
+    expect(result.savings).toBe(6500);
+  });
+});
+
+describe('[FIX] Nessuna ricorsione - max 4 query DB', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('dovrebbe fare esattamente 4 query DB anche senza snapshot precedenti', async () => {
+    // Scenario: nessuno snapshot esiste nel DB.
+    // Prima del fix: ~636 query DB (ricorsione fino al 2000)
+    // Dopo il fix: esattamente 4 query DB (batch: range snap, baseline, transactions, transfers)
+    const mockFrom = buildYearsMock([], null, []);
+    (supabase.from as any) = mockFrom;
+
+    const result = await calculateWealthForMonth('user-123', 2026, 6);
+
+    // Prima del fix: 636 chiamate DB
+    // Dopo il fix: esattamente 4
+    expect(mockFrom).toHaveBeenCalledTimes(4);
+
+    expect(result).toEqual({ investments: 0, savings: 0 });
   });
 });

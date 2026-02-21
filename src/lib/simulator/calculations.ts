@@ -2,7 +2,7 @@
  * Core calculation functions for financial simulator
  */
 
-import { ExpenseRow } from './types';
+import { ExpenseRow, Milestones } from './types';
 
 /**
  * Calculate monthly mortgage payment using French amortization (constant payment)
@@ -46,7 +46,7 @@ export function withdrawFromAssets(
       throw new Error(
         `Insufficient funds for operation. Required: €${amount.toFixed(
           2
-        )}, Available: €${(savings + investments).toFixed(2)}`
+        )}, Available: €${(fromSavings + investments).toFixed(2)}`
       );
     }
   }
@@ -78,8 +78,9 @@ export function applyMonthlyInterest(
 /**
  * Generate unique ID for assets and debts
  */
+let idCounter = 0;
 export function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `sim-${Date.now()}-${++idCounter}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
 /**
@@ -88,15 +89,8 @@ export function generateId(): string {
  */
 export function interpolateMilestone(
   year: number,
-  milestones: {
-    year1: { salary: number };
-    year5: { salary: number };
-    year10: { salary: number };
-    year20: { salary: number };
-    year30: { salary: number };
-    year50: { salary: number };
-  }
-): { salary: number } {
+  milestones: Milestones
+): { salary: number; investment: number } {
   // Define milestone years and their data
   const milestonePoints = [
     { year: 1, data: milestones.year1 },
@@ -109,12 +103,12 @@ export function interpolateMilestone(
 
   // If year is before first milestone, use first milestone values
   if (year <= 1) {
-    return { salary: milestones.year1.salary };
+    return { salary: milestones.year1.salary, investment: milestones.year1.investment ?? 0 };
   }
 
   // If year is after last milestone, use last milestone values
   if (year >= 50) {
-    return { salary: milestones.year50.salary };
+    return { salary: milestones.year50.salary, investment: milestones.year50.investment ?? 0 };
   }
 
   // Find the two milestones to interpolate between
@@ -137,7 +131,11 @@ export function interpolateMilestone(
     lowerMilestone.data.salary +
     (upperMilestone.data.salary - lowerMilestone.data.salary) * ratio;
 
-  return { salary };
+  const lowerInv = lowerMilestone.data.investment ?? 0;
+  const upperInv = upperMilestone.data.investment ?? 0;
+  const investment = lowerInv + (upperInv - lowerInv) * ratio;
+
+  return { salary, investment };
 }
 
 /**

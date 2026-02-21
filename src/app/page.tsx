@@ -25,7 +25,7 @@ export default function Home() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-warmBg-primary">
+    <main className="flex min-h-screen flex-col items-center justify-center p-4 md:p-8 bg-warmBg-primary">
       <div className="max-w-2xl w-full text-center">
         {/* Logo/Icon */}
         <div className="inline-flex items-center justify-center w-20 h-20 bg-warmAccent-primary rounded-2xl mb-6">
@@ -33,10 +33,10 @@ export default function Home() {
         </div>
 
         {/* Heading */}
-        <h1 className="text-5xl font-bold text-warmText-primary mb-4">
+        <h1 className="text-3xl md:text-5xl font-bold text-warmText-primary mb-4">
           Financial Life Planner
         </h1>
-        <p className="text-lg text-warmText-tertiary mb-12">
+        <p className="text-lg text-warmText-tertiary mb-8 md:mb-12">
           Gestisci le tue finanze con colori caldi e interfaccia user-friendly
         </p>
 

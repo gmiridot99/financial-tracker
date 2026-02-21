@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatCurrency } from '@/hooks/useInvestmentAccounts';
+
+const EXCLUDED_EXPENSE_CATEGORIES = ['Investimenti', 'Risparmi'];
 
 const transactionSchema = z.object({
   type: z.enum(['income', 'expense'], { required_error: 'Seleziona un tipo' }),
@@ -19,7 +22,6 @@ const transactionSchema = z.object({
   is_recurring: z.boolean(),
   frequency: z.enum(['monthly', 'annual', 'one-time']).optional(),
 }).refine((data) => {
-  // If recurring, frequency must be monthly or annual
   if (data.is_recurring && (!data.frequency || data.frequency === 'one-time')) {
     return false;
   }
@@ -45,6 +47,13 @@ interface Category {
   type: 'income' | 'expense';
 }
 
+interface SavingsAccount {
+  id: string;
+  name: string;
+  balance: number;
+  is_primary: boolean;
+}
+
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -58,6 +67,8 @@ interface TransactionModalProps {
     description: string | null;
     is_recurring: boolean;
     frequency: 'monthly' | 'annual' | 'one-time';
+    from_savings_account_id?: string | null;
+    to_savings_account_id?: string | null;
   } | null;
 }
 
@@ -69,30 +80,55 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
     type: '',
     amount: '',
     category: '',
-    date: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
+    date: new Date().toISOString().split('T')[0],
     description: '',
     is_recurring: false,
     frequency: '',
   });
   const [errors, setErrors] = useState<Partial<Record<keyof TransactionFormData, string>>>({});
 
-  // Load categories when modal opens
+  // Savings accounts for chip selectors
+  const [savingsAccounts, setSavingsAccounts] = useState<SavingsAccount[]>([]);
+  const [selectedFromAccountId, setSelectedFromAccountId] = useState(''); // for expense
+  const [selectedToAccountId, setSelectedToAccountId] = useState('');     // for income
+
+  const loadSavingsAccounts = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('savings_accounts')
+      .select('id, name, balance, is_primary')
+      .eq('user_id', user.id)
+      .order('is_primary', { ascending: false })
+      .order('sort_order', { ascending: true });
+
+    const accounts = data || [];
+    setSavingsAccounts(accounts);
+    const primary = accounts.find(a => a.is_primary);
+    if (primary) {
+      setSelectedFromAccountId(primary.id);
+      setSelectedToAccountId(primary.id);
+    }
+  }, [user]);
+
+  // Load categories and savings accounts when modal opens
   useEffect(() => {
     if (isOpen) {
       loadCategories();
+      loadSavingsAccounts();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
-  // Load categories filtered by selected type
+  // Reload categories when type changes
   useEffect(() => {
     if (formData.type) {
       loadCategories();
-      // Reset category if type changes
       setFormData(prev => ({ ...prev, category: '' }));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.type]);
 
-  // Pre-fill form when editing existing transaction
+  // Pre-fill form when editing
   useEffect(() => {
     if (transaction && isOpen) {
       setFormData({
@@ -104,8 +140,13 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
         is_recurring: transaction.is_recurring,
         frequency: transaction.frequency,
       });
+      if (transaction.from_savings_account_id) {
+        setSelectedFromAccountId(transaction.from_savings_account_id);
+      }
+      if (transaction.to_savings_account_id) {
+        setSelectedToAccountId(transaction.to_savings_account_id);
+      }
     } else if (!transaction && isOpen) {
-      // Reset to defaults when adding new transaction
       setFormData({
         type: '',
         amount: '',
@@ -130,9 +171,17 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
       }
 
       const { data, error } = await query.order('name');
-
       if (error) throw error;
-      setCategories(data || []);
+
+      // Filter out Investimenti and Risparmi for expenses (now handled by TransferForm)
+      const filtered = (data || []).filter(c => {
+        if (c.type === 'expense') {
+          return !EXCLUDED_EXPENSE_CATEGORIES.includes(c.name);
+        }
+        return true;
+      });
+
+      setCategories(filtered);
     } catch (error) {
       console.error('Error loading categories:', error);
       toast.error('Errore nel caricamento delle categorie');
@@ -143,7 +192,6 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
 
-    // Clear error for this field
     if (errors[name as keyof TransactionFormData]) {
       setErrors(prev => ({ ...prev, [name]: undefined }));
     }
@@ -160,14 +208,10 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
     setIsLoading(true);
 
     try {
-      // Validate form data
       const validated = transactionSchema.parse(formData);
 
-      if (!user) {
-        throw new Error('Utente non autenticato');
-      }
+      if (!user) throw new Error('Utente non autenticato');
 
-      // Parse amount (replace comma with dot for decimal)
       const amount = parseFloat(validated.amount.replace(',', '.'));
 
       const transactionData = {
@@ -181,43 +225,156 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
         description: validated.description || null,
       };
 
-      let error;
+      const resetAndClose = () => {
+        onSuccess();
+        onClose();
+        setFormData({
+          type: '',
+          amount: '',
+          category: '',
+          date: new Date().toISOString().split('T')[0],
+          description: '',
+          is_recurring: false,
+          frequency: '',
+        });
+      };
 
+      // Edit mode: just update transaction fields, no balance change
       if (transaction) {
-        // Update existing transaction
-        const result = await supabase
+        const { error } = await supabase
           .from('transactions')
           .update(transactionData)
           .eq('id', transaction.id)
           .eq('user_id', user.id);
-        error = result.error;
-      } else {
-        // Insert new transaction
-        const result = await supabase
+
+        if (error) throw error;
+        toast.success('Transazione aggiornata con successo!');
+        resetAndClose();
+        return;
+      }
+
+      // New expense: balance check → decrement → INSERT with from_savings_account_id
+      if (validated.type === 'expense') {
+        const fromAccount = savingsAccounts.find(a => a.id === selectedFromAccountId);
+        if (!fromAccount) {
+          toast.error('Seleziona un conto da cui addebitare la spesa');
+          setIsLoading(false);
+          return;
+        }
+
+        if (fromAccount.balance < amount) {
+          toast.error(
+            `Saldo insufficiente su ${fromAccount.name} (disponibile: ${formatCurrency(fromAccount.balance)}, richiesti: ${formatCurrency(amount)})`
+          );
+          setIsLoading(false);
+          return;
+        }
+
+        const originalBalance = fromAccount.balance;
+        const newBalance = Math.round((originalBalance - amount) * 100) / 100;
+
+        // Step 1: decrement balance
+        const { error: balanceError } = await supabase
+          .from('savings_accounts')
+          .update({ balance: newBalance })
+          .eq('id', selectedFromAccountId)
+          .eq('user_id', user.id);
+
+        if (balanceError) {
+          toast.error("Errore nell'aggiornamento del saldo del conto");
+          setIsLoading(false);
+          return;
+        }
+
+        // Step 2: INSERT transaction with from_savings_account_id
+        const { error: txError } = await supabase
           .from('transactions')
           .insert({
             user_id: user.id,
             ...transactionData,
+            from_savings_account_id: selectedFromAccountId,
           });
-        error = result.error;
+
+        if (txError) {
+          // Rollback step 1
+          const { error: rollbackError } = await supabase
+            .from('savings_accounts')
+            .update({ balance: originalBalance })
+            .eq('id', selectedFromAccountId)
+            .eq('user_id', user.id);
+
+          if (rollbackError) {
+            toast.error('ERRORE CRITICO: saldo non sincronizzato. Contatta il supporto.');
+          } else {
+            toast.error('Errore durante il salvataggio. Saldo ripristinato.');
+          }
+          setIsLoading(false);
+          return;
+        }
+
+        toast.success('Spesa aggiunta!');
+        resetAndClose();
+        return;
       }
 
-      if (error) throw error;
+      // New income: INSERT with to_savings_account_id → increment balance
+      if (validated.type === 'income') {
+        const toAccount = savingsAccounts.find(a => a.id === selectedToAccountId);
+        if (!toAccount) {
+          toast.error("Seleziona un conto dove accreditare l'entrata");
+          setIsLoading(false);
+          return;
+        }
 
-      toast.success(transaction ? 'Transazione aggiornata con successo!' : 'Transazione aggiunta con successo!');
-      onSuccess();
-      onClose();
+        // Step 1: INSERT transaction with to_savings_account_id
+        const { data: insertedTx, error: txError } = await supabase
+          .from('transactions')
+          .insert({
+            user_id: user.id,
+            ...transactionData,
+            to_savings_account_id: selectedToAccountId,
+          })
+          .select('id')
+          .single();
 
-      // Reset form
-      setFormData({
-        type: '',
-        amount: '',
-        category: '',
-        date: new Date().toISOString().split('T')[0],
-        description: '',
-        is_recurring: false,
-        frequency: '',
-      });
+        if (txError || !insertedTx) {
+          toast.error('Errore durante il salvataggio');
+          setIsLoading(false);
+          return;
+        }
+
+        const originalBalance = toAccount.balance;
+        const newBalance = Math.round((originalBalance + amount) * 100) / 100;
+
+        // Step 2: increment balance
+        const { error: balanceError } = await supabase
+          .from('savings_accounts')
+          .update({ balance: newBalance })
+          .eq('id', selectedToAccountId)
+          .eq('user_id', user.id);
+
+        if (balanceError) {
+          // Rollback: delete the inserted transaction
+          const { error: rollbackError } = await supabase
+            .from('transactions')
+            .delete()
+            .eq('id', insertedTx.id)
+            .eq('user_id', user.id);
+
+          if (rollbackError) {
+            toast.error('ERRORE CRITICO: transazione non sincronizzata. Contatta il supporto.');
+          } else {
+            toast.error('Errore durante il salvataggio. Transazione annullata.');
+          }
+          setIsLoading(false);
+          return;
+        }
+
+        toast.success('Entrata aggiunta!');
+        resetAndClose();
+        return;
+      }
+
     } catch (error) {
       if (error instanceof z.ZodError) {
         const fieldErrors: Partial<Record<keyof TransactionFormData, string>> = {};
@@ -239,7 +396,6 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
   const handleDelete = async () => {
     if (!transaction || !user) return;
 
-    let confirmMessage = 'Sei sicuro di voler eliminare questa transazione?';
     let deleteAllFuture = false;
 
     if (transaction.is_recurring) {
@@ -251,26 +407,22 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
       );
 
       if (choice === false) {
-        // User cancelled
         return;
       }
 
-      // Ask if they want to delete all future occurrences
       const deleteAll = window.confirm(
         'Vuoi eliminare anche tutte le occorrenze future di questa transazione ricorrente?'
       );
 
       deleteAllFuture = deleteAll;
     } else {
-      // Simple confirmation for one-time transactions
-      const confirmed = window.confirm(confirmMessage);
+      const confirmed = window.confirm('Sei sicuro di voler eliminare questa transazione?');
       if (!confirmed) return;
     }
 
     setIsLoading(true);
     try {
       if (deleteAllFuture && transaction.is_recurring) {
-        // Delete all future occurrences (same category, amount, recurring)
         const { error } = await supabase
           .from('transactions')
           .delete()
@@ -283,7 +435,6 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
 
         if (error) throw error;
       } else {
-        // Delete only this transaction
         const { error } = await supabase
           .from('transactions')
           .delete()
@@ -298,7 +449,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
       onClose();
     } catch (error) {
       console.error('Error deleting transaction:', error);
-      toast.error('Errore durante l\'eliminazione');
+      toast.error("Errore durante l'eliminazione");
     } finally {
       setIsLoading(false);
     }
@@ -307,8 +458,8 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
-      <div className="bg-warmBg-secondary rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center sm:justify-center sm:p-4">
+      <div className="bg-warmBg-secondary w-full h-full overflow-y-auto sm:h-auto sm:max-w-md sm:max-h-[90vh] sm:rounded-2xl sm:shadow-2xl animate-sheetSlideUp sm:animate-none">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-warmBg-tertiary">
           <h2 className="text-xl font-semibold text-warmText-primary">
@@ -352,6 +503,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
               id="amount"
               name="amount"
               type="text"
+              inputMode="decimal"
               placeholder="100,00"
               value={formData.amount}
               onChange={handleChange}
@@ -384,6 +536,52 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
             </select>
             {errors.category && <p className="mt-1 text-sm text-warmData-expense">{errors.category}</p>}
           </div>
+
+          {/* "Dal conto" chip selector for expense */}
+          {formData.type === 'expense' && !transaction && savingsAccounts.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-warmText-secondary mb-2">Dal conto</p>
+              <div className="flex flex-wrap gap-2">
+                {savingsAccounts.map(account => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() => setSelectedFromAccountId(account.id)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      selectedFromAccountId === account.id
+                        ? 'bg-warmData-expense text-white'
+                        : 'bg-warmBg-primary text-warmText-secondary border border-warmText-muted hover:border-warmData-expense hover:text-warmData-expense'
+                    }`}
+                  >
+                    {account.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* "Al conto" chip selector for income */}
+          {formData.type === 'income' && !transaction && savingsAccounts.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-warmText-secondary mb-2">Al conto</p>
+              <div className="flex flex-wrap gap-2">
+                {savingsAccounts.map(account => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() => setSelectedToAccountId(account.id)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      selectedToAccountId === account.id
+                        ? 'bg-warmData-income text-white'
+                        : 'bg-warmBg-primary text-warmText-secondary border border-warmText-muted hover:border-warmData-income hover:text-warmData-income'
+                    }`}
+                  >
+                    {account.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Date */}
           <div>
@@ -425,7 +623,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
             </label>
           </div>
 
-          {/* Frequency - shown only when is_recurring is true */}
+          {/* Frequency */}
           {formData.is_recurring && (
             <div>
               <label htmlFor="frequency" className="block text-sm font-medium text-warmText-secondary mb-1">

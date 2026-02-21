@@ -368,7 +368,7 @@ export default function PurchaseEventForm({
                 <button
                   type="button"
                   onClick={setAppreciationToInflation}
-                  className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-sm font-medium transition-colors border border-amber-300"
+                  className="px-4 py-2 bg-warmBg-tertiary hover:bg-warmBg-hover text-warmText-secondary rounded-lg text-sm font-medium transition-colors border border-warmText-muted"
                 >
                   = Inflazione ({inflationRate}%)
                 </button>

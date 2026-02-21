@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { PlusCircle, X } from 'lucide-react';
+import { PlusCircle } from 'lucide-react';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
@@ -42,6 +42,13 @@ interface Category {
   type: 'income' | 'expense';
 }
 
+interface SavingsAccount {
+  id: string;
+  name: string;
+  balance: number;
+  is_primary: boolean;
+}
+
 interface InlineIncomeFormProps {
   onSuccess: () => void;
   defaultDate?: string;
@@ -50,6 +57,8 @@ interface InlineIncomeFormProps {
 export default function InlineIncomeForm({ onSuccess, defaultDate }: InlineIncomeFormProps) {
   const { user } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
+  const [savingsAccounts, setSavingsAccounts] = useState<SavingsAccount[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [formData, setFormData] = useState<TransactionFormData>({
@@ -70,7 +79,16 @@ export default function InlineIncomeForm({ onSuccess, defaultDate }: InlineIncom
 
   useEffect(() => {
     loadCategories();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Load savings accounts and preselect primary when form expands
+  useEffect(() => {
+    if (isExpanded && user) {
+      loadSavingsAccounts();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExpanded, user]);
 
   const loadCategories = async () => {
     try {
@@ -87,6 +105,20 @@ export default function InlineIncomeForm({ onSuccess, defaultDate }: InlineIncom
       console.error('Error loading categories:', error);
       toast.error('Errore nel caricamento delle categorie');
     }
+  };
+
+  const loadSavingsAccounts = async () => {
+    const { data } = await supabase
+      .from('savings_accounts')
+      .select('id, name, balance, is_primary')
+      .eq('user_id', user!.id)
+      .order('is_primary', { ascending: false })
+      .order('sort_order', { ascending: true });
+
+    const accounts = data || [];
+    setSavingsAccounts(accounts);
+    const primary = accounts.find(a => a.is_primary);
+    if (primary) setSelectedAccountId(primary.id);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -110,25 +142,65 @@ export default function InlineIncomeForm({ onSuccess, defaultDate }: InlineIncom
         throw new Error('Utente non autenticato');
       }
 
+      const toAccount = savingsAccounts.find(a => a.id === selectedAccountId);
+      if (!toAccount) {
+        toast.error('Seleziona un conto dove accreditare l\'entrata');
+        setIsLoading(false);
+        return;
+      }
+
       const amount = parseFloat(validated.amount.replace(',', '.'));
 
-      const transactionData = {
-        user_id: user.id,
-        type: 'income',
-        amount,
-        currency: 'EUR',
-        category: validated.category,
-        is_recurring: validated.is_recurring,
-        frequency: validated.is_recurring ? (validated.frequency || 'monthly') : 'one-time',
-        start_date: validated.date,
-        description: validated.description || null,
-      };
-
-      const { error } = await supabase
+      // Step 1: INSERT transaction with to_savings_account_id
+      const { data: insertedTx, error: txError } = await supabase
         .from('transactions')
-        .insert(transactionData);
+        .insert({
+          user_id: user.id,
+          type: 'income',
+          amount,
+          currency: 'EUR',
+          category: validated.category,
+          is_recurring: validated.is_recurring,
+          frequency: validated.is_recurring ? (validated.frequency || 'monthly') : 'one-time',
+          start_date: validated.date,
+          description: validated.description || null,
+          to_savings_account_id: selectedAccountId,
+        })
+        .select('id')
+        .single();
 
-      if (error) throw error;
+      if (txError || !insertedTx) {
+        toast.error('Errore durante il salvataggio');
+        setIsLoading(false);
+        return;
+      }
+
+      const originalBalance = toAccount.balance;
+      const newBalance = Math.round((originalBalance + amount) * 100) / 100;
+
+      // Step 2: increment savings account balance
+      const { error: balanceError } = await supabase
+        .from('savings_accounts')
+        .update({ balance: newBalance })
+        .eq('id', selectedAccountId)
+        .eq('user_id', user.id);
+
+      if (balanceError) {
+        // Rollback: delete the inserted transaction
+        const { error: rollbackError } = await supabase
+          .from('transactions')
+          .delete()
+          .eq('id', insertedTx.id)
+          .eq('user_id', user.id);
+
+        if (rollbackError) {
+          toast.error('ERRORE CRITICO: transazione non sincronizzata. Contatta il supporto.');
+        } else {
+          toast.error('Errore durante il salvataggio. Transazione annullata.');
+        }
+        setIsLoading(false);
+        return;
+      }
 
       toast.success('Entrata aggiunta!');
       onSuccess();
@@ -170,7 +242,7 @@ export default function InlineIncomeForm({ onSuccess, defaultDate }: InlineIncom
         <div className="flex items-center gap-2">
           <PlusCircle className="w-5 h-5 text-warmData-income" />
           <span className="text-sm font-normal text-warmData-income group-hover:opacity-80 transition-colors">
-            Aggiungi un'entrata...
+            Aggiungi un&apos;entrata...
           </span>
         </div>
         <span className="text-xs font-medium text-warmData-income">EUR</span>
@@ -189,6 +261,7 @@ export default function InlineIncomeForm({ onSuccess, defaultDate }: InlineIncom
           <input
             name="amount"
             type="text"
+            inputMode="decimal"
             placeholder="12,50"
             value={formData.amount}
             onChange={handleChange}
@@ -209,6 +282,29 @@ export default function InlineIncomeForm({ onSuccess, defaultDate }: InlineIncom
             ))}
           </select>
         </div>
+
+        {/* Account chip selector */}
+        {savingsAccounts.length > 0 && (
+          <div>
+            <p className="text-xs text-warmText-tertiary mb-1.5">Al conto</p>
+            <div className="flex flex-wrap gap-1.5">
+              {savingsAccounts.map(account => (
+                <button
+                  key={account.id}
+                  type="button"
+                  onClick={() => setSelectedAccountId(account.id)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    selectedAccountId === account.id
+                      ? 'bg-warmData-income text-white'
+                      : 'bg-warmBg-primary text-warmText-secondary border border-warmText-muted hover:border-warmData-income hover:text-warmData-income'
+                  }`}
+                >
+                  {account.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Description */}
         <input

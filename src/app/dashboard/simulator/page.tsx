@@ -9,7 +9,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import MilestoneTable from '@/components/simulator/MilestoneTable';
 import DebtsList from '@/components/simulator/DebtsList';
-import SimulatorChart from '@/components/simulator/SimulatorChart';
+import dynamic from 'next/dynamic';
+const SimulatorChart = dynamic(() => import('@/components/simulator/SimulatorChart'), { ssr: false });
 import ResultsSummary from '@/components/simulator/ResultsSummary';
 import MilestonesCards from '@/components/simulator/MilestonesCards';
 import ExportButton from '@/components/simulator/ExportButton';
@@ -33,17 +34,15 @@ export default function SimulatorPage() {
     horizonYears: 50,
     startYear: new Date().getFullYear(),
     inflationRate: 2,
-    allocationInvestments: 60,
-    allocationSavings: 40,
     investmentReturnRate: 7,
     savingsReturnRate: 1,
     milestones: {
-      year1: { salary: 2500 },
-      year5: { salary: 3000 },
-      year10: { salary: 3500 },
-      year20: { salary: 4500 },
-      year30: { salary: 5000 },
-      year50: { salary: 6000 },
+      year1: { salary: 2500, investment: 500 },
+      year5: { salary: 3000, investment: 600 },
+      year10: { salary: 3500, investment: 800 },
+      year20: { salary: 4500, investment: 1000 },
+      year30: { salary: 5000, investment: 1200 },
+      year50: { salary: 6000, investment: 1500 },
     },
     expenseRows: [
       { id: 'default-affitto', label: 'Affitto', amounts: { year1: 700, year5: 800, year10: 900, year20: 1000, year30: 1000, year50: 1000 } },
@@ -137,7 +136,19 @@ export default function SimulatorPage() {
     const simulation = savedSimulations.find((s) => s.id === id);
     if (!simulation) return;
 
-    setConfig(simulation.config as SimulationConfig);
+    const loadedConfig = simulation.config as SimulationConfig;
+
+    // Migrate old configs: ensure milestones have investment field
+    if (loadedConfig.milestones) {
+      const keys = ['year1', 'year5', 'year10', 'year20', 'year30', 'year50'] as const;
+      for (const key of keys) {
+        if (loadedConfig.milestones[key] && loadedConfig.milestones[key].investment === undefined) {
+          (loadedConfig.milestones[key] as { salary: number; investment: number }).investment = 0;
+        }
+      }
+    }
+
+    setConfig(loadedConfig);
     setShowLoadMenu(false);
     setResult(null);
   };
@@ -160,11 +171,11 @@ export default function SimulatorPage() {
   };
 
   return (
-    <div className="min-h-screen bg-warmBg-primary p-6">
+    <div className="min-h-screen bg-warmBg-primary p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
+        <div className="mb-6 md:mb-8">
+          <div className="flex items-center gap-4 mb-3 md:mb-0">
             <Link
               href="/dashboard"
               className="flex items-center gap-2 text-warmText-tertiary hover:text-warmText-secondary transition-colors"
@@ -172,8 +183,8 @@ export default function SimulatorPage() {
               <ArrowLeft className="w-5 h-5" />
               <span>Dashboard</span>
             </Link>
-            <div className="h-6 w-px bg-warmBg-tertiary" />
-            <div>
+            <div className="hidden md:block h-6 w-px bg-warmBg-tertiary" />
+            <div className="hidden md:block">
               <h1 className="text-3xl font-bold text-warmText-primary flex items-center gap-3">
                 <TrendingUp className="w-8 h-8 text-warmAccent-primary" />
                 Simulatore Finanziario Multi-Decennale
@@ -182,6 +193,16 @@ export default function SimulatorPage() {
                 Proietta il tuo patrimonio nei prossimi 50 anni
               </p>
             </div>
+          </div>
+          {/* Mobile-only compact header */}
+          <div className="md:hidden">
+            <h1 className="text-xl font-bold text-warmText-primary flex items-center gap-2">
+              <TrendingUp className="w-6 h-6 text-warmAccent-primary" />
+              Simulatore Finanziario
+            </h1>
+            <p className="text-warmText-secondary text-sm mt-1">
+              Proietta il tuo patrimonio nei prossimi 50 anni
+            </p>
           </div>
         </div>
 
@@ -219,18 +240,18 @@ export default function SimulatorPage() {
         {/* Main Content Grid */}
         <div className="grid gap-6">
           {/* Configuration Section */}
-          <div className="bg-warmBg-secondary rounded-xl border border-warmBg-tertiary p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-warmText-primary">
+          <div className="bg-warmBg-secondary rounded-xl border border-warmBg-tertiary p-4 md:p-6">
+            <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-lg md:text-xl font-semibold text-warmText-primary">
                 Configurazione Simulazione
               </h2>
-              <div className="flex items-center gap-3">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
                 {user && (
                   <>
                     <div className="relative">
                       <button
                         onClick={() => setShowLoadMenu(!showLoadMenu)}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-warmBg-tertiary hover:bg-warmBg-hover text-warmText-secondary rounded-lg transition-colors"
+                        className="w-full flex items-center justify-center gap-2 px-4 min-h-[44px] py-2.5 bg-warmBg-tertiary hover:bg-warmBg-hover text-warmText-secondary rounded-lg transition-colors"
                       >
                         <FolderOpen className="w-4 h-4" />
                         <span className="font-medium text-sm">Carica</span>
@@ -246,7 +267,7 @@ export default function SimulatorPage() {
                     </div>
                     <button
                       onClick={() => setShowSaveDialog(true)}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-warmBg-tertiary hover:bg-warmBg-hover text-warmText-secondary rounded-lg transition-colors"
+                      className="w-full flex items-center justify-center gap-2 px-4 min-h-[44px] py-2.5 bg-warmBg-tertiary hover:bg-warmBg-hover text-warmText-secondary rounded-lg transition-colors"
                     >
                       <Save className="w-4 h-4" />
                       <span className="font-medium text-sm">Salva</span>
@@ -257,7 +278,7 @@ export default function SimulatorPage() {
                 <button
                   onClick={handleSimulate}
                   disabled={isSimulating}
-                  className="flex items-center gap-2 px-6 py-3 bg-warmAccent-primary hover:bg-warmAccent-hover disabled:bg-warmBg-tertiary disabled:text-warmText-disabled text-warmText-primary rounded-lg font-medium transition-colors"
+                  className="col-span-2 sm:col-span-1 flex items-center justify-center gap-2 px-6 min-h-[44px] py-3 bg-warmAccent-primary hover:bg-warmAccent-hover disabled:bg-warmBg-tertiary disabled:text-warmText-disabled text-warmText-primary rounded-lg font-medium transition-colors"
                 >
                   {isSimulating ? (
                     <>
@@ -284,7 +305,7 @@ export default function SimulatorPage() {
                   <label className="block text-xs text-warmText-tertiary mb-1.5">
                     Investimenti Iniziali (&euro;)
                   </label>
-                  <p className="text-xs text-warmText-disabled mb-1">ETF, azioni, fondi, obbligazioni</p>
+                  <p className="text-xs text-warmText-tertiary mb-1 hidden md:block">ETF, azioni, fondi, obbligazioni</p>
                   <input
                     type="number"
                     min="0"
@@ -297,7 +318,7 @@ export default function SimulatorPage() {
                       })
                     }
                     placeholder="0"
-                    className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl focus:ring-2 focus:ring-warmAccent-primary focus:border-transparent"
+                    className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl text-base md:text-sm focus:ring-2 focus:ring-warmAccent-primary focus:border-transparent"
                   />
                 </div>
 
@@ -305,7 +326,7 @@ export default function SimulatorPage() {
                   <label className="block text-xs text-warmText-tertiary mb-1.5">
                     Risparmi Iniziali (&euro;)
                   </label>
-                  <p className="text-xs text-warmText-disabled mb-1">Conto corrente, depositi, contanti</p>
+                  <p className="text-xs text-warmText-tertiary mb-1 hidden md:block">Conto corrente, depositi, contanti</p>
                   <input
                     type="number"
                     min="0"
@@ -318,7 +339,7 @@ export default function SimulatorPage() {
                       })
                     }
                     placeholder="0"
-                    className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl focus:ring-2 focus:ring-warmAccent-primary focus:border-transparent"
+                    className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl text-base md:text-sm focus:ring-2 focus:ring-warmAccent-primary focus:border-transparent"
                   />
                 </div>
 
@@ -337,7 +358,7 @@ export default function SimulatorPage() {
                         startYear: Number(e.target.value),
                       })
                     }
-                    className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl focus:ring-2 focus:ring-warmAccent-primary focus:border-transparent"
+                    className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl text-base md:text-sm focus:ring-2 focus:ring-warmAccent-primary focus:border-transparent"
                   />
                 </div>
 
@@ -358,59 +379,22 @@ export default function SimulatorPage() {
                       })
                     }
                     placeholder="0"
-                    className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl focus:ring-2 focus:ring-warmAccent-primary focus:border-transparent"
+                    className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl text-base md:text-sm focus:ring-2 focus:ring-warmAccent-primary focus:border-transparent"
                   />
                 </div>
               </div>
 
-              {/* Allocation Section */}
+              {/* Return Rates */}
               <div className="mt-6 pt-6 border-t border-warmBg-tertiary">
-                <h4 className="text-xs font-semibold text-warmText-primary uppercase tracking-wider mb-1">
-                  Allocazione Surplus
+                <h4 className="text-xs font-semibold text-warmText-primary uppercase tracking-wider mb-3">
+                  Rendimenti
                 </h4>
-                <p className="text-xs text-warmText-disabled mb-3">
-                  Come distribuire il risparmio mensile tra investimenti (ETF, fondi) e risparmi (conto corrente)
-                </p>
-
-                {/* Allocation Slider */}
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-warmData-investment">
-                      Investimenti: {config.allocationInvestments}%
-                    </span>
-                    <span className="text-sm font-medium text-warmData-savings">
-                      Risparmi: {config.allocationSavings}%
-                    </span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={config.allocationInvestments}
-                      onChange={(e) => {
-                        const inv = Number(e.target.value);
-                        setConfig({
-                          ...config,
-                          allocationInvestments: inv,
-                          allocationSavings: 100 - inv,
-                        });
-                      }}
-                      className="w-full h-2 bg-warmBg-tertiary rounded-full appearance-none cursor-pointer accent-warmData-investment"
-                      style={{
-                        background: `linear-gradient(to right, rgba(236, 115, 87, 0.3) 0%, rgba(236, 115, 87, 0.3) ${config.allocationInvestments}%, rgba(87, 160, 131, 0.3) ${config.allocationInvestments}%, rgba(87, 160, 131, 0.3) 100%)`
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Return Rates */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs text-warmText-tertiary mb-1.5">
                       Rendimento Investimenti (% annuo)
                     </label>
-                    <p className="text-xs text-warmText-disabled mb-1">Rendimento medio annuo atteso (es. 7% per ETF globale)</p>
+                    <p className="text-xs text-warmText-tertiary mb-1 hidden md:block">Rendimento medio annuo atteso (es. 7% per ETF globale)</p>
                     <input
                       type="number"
                       min="0"
@@ -424,14 +408,14 @@ export default function SimulatorPage() {
                         })
                       }
                       placeholder="0"
-                      className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl text-sm focus:border-warmData-investment focus:ring-2 focus:ring-warmData-investment focus:ring-opacity-20 transition-all"
+                      className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl text-base md:text-sm focus:border-warmData-investment focus:ring-2 focus:ring-warmData-investment focus:ring-opacity-20 transition-all"
                     />
                   </div>
                   <div>
                     <label className="block text-xs text-warmText-tertiary mb-1.5">
                       Rendimento Risparmi (% annuo)
                     </label>
-                    <p className="text-xs text-warmText-disabled mb-1">Interessi sul conto (es. 1-3% per depositi vincolati)</p>
+                    <p className="text-xs text-warmText-tertiary mb-1 hidden md:block">Interessi sul conto (es. 1-3% per depositi vincolati)</p>
                     <input
                       type="number"
                       min="0"
@@ -445,7 +429,7 @@ export default function SimulatorPage() {
                         })
                       }
                       placeholder="0"
-                      className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl text-sm focus:border-warmData-savings focus:ring-2 focus:ring-warmData-savings focus:ring-opacity-20 transition-all"
+                      className="w-full h-11 px-3 bg-warmBg-tertiary border border-warmBg-hover text-warmText-primary rounded-xl text-base md:text-sm focus:border-warmData-savings focus:ring-2 focus:ring-warmData-savings focus:ring-opacity-20 transition-all"
                     />
                   </div>
                 </div>
