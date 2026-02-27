@@ -7,8 +7,6 @@ import {
   Trash2,
   Check,
   X,
-  ChevronDown,
-  ChevronUp,
   ArrowRightLeft,
   Download,
   ShoppingCart,
@@ -35,7 +33,6 @@ import toast from 'react-hot-toast';
 
 interface InvestmentAccountsListProps {
   userId: string;
-  investmentsUnallocated: number;
   onAccountsChanged?: () => void;
   onTotalMarketValue?: (value: number, totalCostBasis: number) => void;
   onPricesLoadingChange?: (loading: boolean) => void;
@@ -68,13 +65,11 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default function InvestmentAccountsList({
   userId,
-  investmentsUnallocated,
   onAccountsChanged,
   onTotalMarketValue,
   onPricesLoadingChange,
   onDistributionData,
 }: InvestmentAccountsListProps) {
-  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
   const [deletingAccount, setDeletingAccount] = useState<InvestmentAccount | null>(null);
   const [marketReferencePrice, setMarketReferencePrice] = useState<number | null>(null);
   const [manualBuyMode, setManualBuyMode] = useState(false);
@@ -118,7 +113,6 @@ export default function InvestmentAccountsList({
 
   const inv = useInvestmentAccounts({
     userId,
-    investmentsUnallocated,
     onAccountsChanged,
     onTotalMarketValue,
     onDistributionData,
@@ -159,15 +153,6 @@ export default function InvestmentAccountsList({
   }, [inv.marketPrices]);
 
   // ── Helpers ──────────────────────────────────────────────────────
-
-  const toggleAccount = (id: string) => {
-    setExpandedAccounts(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const getMarketValue = (holding: Holding): number => {
     const price = inv.marketPrices.get(holding.symbol);
@@ -221,7 +206,6 @@ export default function InvestmentAccountsList({
       {/* Account Cards */}
       {inv.accounts.map(account => {
         const holdings = inv.holdingsMap[account.id] || [];
-        const isExpanded = expandedAccounts.has(account.id);
         const cashBalance = Number(account.cash_balance);
         const totalHoldingsValue = holdings.reduce((sum, h) => sum + getMarketValue(h), 0);
         const totalAccountValue = cashBalance + totalHoldingsValue;
@@ -285,12 +269,6 @@ export default function InvestmentAccountsList({
                         )}
                       </div>
                     </div>
-                    <button
-                      onClick={() => toggleAccount(account.id)}
-                      className="w-9 h-9 flex items-center justify-center text-warmText-tertiary hover:bg-warmBg-tertiary rounded-lg transition-colors"
-                    >
-                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
                   </>
                 )}
               </div>
@@ -436,12 +414,9 @@ export default function InvestmentAccountsList({
                     Deposita
                   </button>
                 </div>
-                <p className="text-[10px] text-warmText-muted mt-1">
-                  Disponibili: {formatCurrency(investmentsUnallocated)}
-                  {pacRules.getRulesForAccount(account.id).filter(r => r.is_active).length > 0 && (
-                    <span className="text-warmData-investment"> - PAC attivo</span>
-                  )}
-                </p>
+                {pacRules.getRulesForAccount(account.id).filter(r => r.is_active).length > 0 && (
+                  <p className="text-[10px] text-warmData-investment mt-1">PAC attivo</p>
+                )}
               </div>
             )}
 
@@ -462,8 +437,6 @@ export default function InvestmentAccountsList({
                   className="w-full h-11 bg-warmBg-tertiary rounded-xl px-3 text-warmText-primary text-base md:text-sm focus:outline-none focus:ring-2 focus:ring-warmData-investment focus:ring-opacity-50 appearance-none"
                 >
                   <option value="">Seleziona destinazione</option>
-                  <option value="unallocated_investments">Non destinati Investimenti</option>
-                  <option value="unallocated_savings">Non destinati Risparmi</option>
                   {inv.accounts.filter(a => a.id !== account.id).map(a => (
                     <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
@@ -620,200 +593,204 @@ export default function InvestmentAccountsList({
               </div>
             )}
 
-            {/* Holdings Section (expanded) */}
-            {isExpanded && (
-              <div className="px-4 pb-4 space-y-2 animate-cardEnter">
-                {holdings.length === 0 ? (
-                  <p className="text-xs text-warmText-tertiary py-2 text-center">
-                    Nessun titolo in portafoglio
-                  </p>
-                ) : (
-                  holdings.map(holding => {
-                    const isManual = holding.type === 'manual';
-                    const marketValue = getMarketValue(holding);
-                    const pnl = isManual ? 0 : getPnL(holding);
-                    const pnlPct = isManual ? 0 : (holding.costBasis > 0 ? (pnl / holding.costBasis) * 100 : 0);
-                    const price = inv.marketPrices.get(holding.symbol);
-                    const isHoldingExpanded = inv.expandedHolding === `${account.id}:${holding.symbol}`;
+            {/* Holdings Section (always visible) */}
+            {holdings.length > 0 && (
+              <div className="px-4 pb-4 space-y-2">
+                {holdings.map(holding => {
+                  const isManual = holding.type === 'manual';
+                  const marketValue = getMarketValue(holding);
+                  const pnl = isManual ? 0 : getPnL(holding);
+                  const pnlPct = isManual ? 0 : (holding.costBasis > 0 ? (pnl / holding.costBasis) * 100 : 0);
+                  const price = inv.marketPrices.get(holding.symbol);
+                  const isHoldingExpanded = inv.expandedHolding === `${account.id}:${holding.symbol}`;
 
-                    return (
-                      <div key={holding.symbol} className="bg-warmBg-tertiary/50 rounded-xl p-3">
-                        <button
-                          onClick={() => inv.setExpandedHolding(isHoldingExpanded ? null : `${account.id}:${holding.symbol}`)}
-                          className="w-full flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-sm font-bold text-warmText-primary">{holding.symbol}</span>
-                                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold uppercase ${TYPE_BADGE_STYLES[holding.type] ?? TYPE_BADGE_STYLES.stock}`}>
-                                  {TYPE_LABELS[holding.type] ?? holding.type}
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-warmText-tertiary truncate">{holding.name}</p>
+                  return (
+                    <div key={holding.symbol} className="bg-warmBg-tertiary/50 rounded-xl p-3">
+                      {/* Row 1: Symbol + badge + name | Value + P&L */}
+                      <button
+                        onClick={() => inv.setExpandedHolding(isHoldingExpanded ? null : `${account.id}:${holding.symbol}`)}
+                        className="w-full flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-bold text-warmText-primary">{holding.symbol}</span>
+                              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold uppercase ${TYPE_BADGE_STYLES[holding.type] ?? TYPE_BADGE_STYLES.stock}`}>
+                                {TYPE_LABELS[holding.type] ?? holding.type}
+                              </span>
                             </div>
+                            <p className="text-[10px] text-warmText-tertiary truncate text-left">{holding.name}</p>
                           </div>
-                          <div className="text-right flex-shrink-0">
-                            <p className="text-sm font-bold text-warmText-primary">{formatCurrency(marketValue)}</p>
-                            {isManual ? (
-                              <p className="text-[10px] font-medium text-warmText-tertiary">
-                                {formatCurrency(0)} (0.0%)
-                              </p>
-                            ) : (
-                              <p className={`text-[10px] font-medium ${pnl >= 0 ? 'text-warmData-income' : 'text-warmData-expense'}`}>
-                                {pnl >= 0 ? '+' : ''}{formatCurrency(pnl)} ({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)
-                              </p>
-                            )}
-                          </div>
-                        </button>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-sm font-bold text-warmText-primary">{formatCurrency(marketValue)}</p>
+                          {isManual ? (
+                            <p className="text-[10px] font-medium text-warmText-tertiary">
+                              {formatCurrency(0)} (0.0%)
+                            </p>
+                          ) : (
+                            <p className={`text-[10px] font-medium ${pnl >= 0 ? 'text-warmData-income' : 'text-warmData-expense'}`}>
+                              {pnl >= 0 ? '+' : ''}{formatCurrency(pnl)} ({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)
+                            </p>
+                          )}
+                        </div>
+                      </button>
 
-                        {/* Holding details */}
-                        {isHoldingExpanded && (
-                          <div className="mt-3 pt-3 border-t border-warmBg-tertiary space-y-2 animate-cardEnter">
-                            {inv.editingHoldingKey === `${account.id}:${holding.symbol}` ? (
-                              /* Inline holding adjustment form */
-                              <div className="space-y-2">
-                                <p className="text-xs font-medium text-warmText-secondary">Modifica posizione</p>
-                                <div className="grid grid-cols-2 gap-2">
-                                  <div>
-                                    <label className="text-[10px] text-warmText-tertiary block mb-1">Quantità</label>
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={inv.editingHoldingQty}
-                                      onChange={(e) => inv.setEditingHoldingQty(e.target.value)}
-                                      placeholder={String(holding.quantity)}
-                                      className="w-full h-9 bg-warmBg-secondary rounded-lg px-2 text-warmText-primary text-xs focus:outline-none focus:ring-2 focus:ring-warmAccent-primary focus:ring-opacity-50"
-                                      autoFocus
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] text-warmText-tertiary block mb-1">Prezzo medio</label>
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={inv.editingHoldingPrice}
-                                      onChange={(e) => inv.setEditingHoldingPrice(e.target.value)}
-                                      placeholder={String(holding.avgPrice).replace('.', ',')}
-                                      className="w-full h-9 bg-warmBg-secondary rounded-lg px-2 text-warmText-primary text-xs focus:outline-none focus:ring-2 focus:ring-warmAccent-primary focus:ring-opacity-50"
-                                    />
-                                  </div>
-                                </div>
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => inv.handleAdjustHolding(account, holding)}
-                                    className="flex-1 h-9 bg-warmAccent-primary text-white rounded-lg text-xs font-medium hover:bg-warmAccent-hover transition-colors"
-                                  >
-                                    Salva
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      inv.setEditingHoldingKey(null);
-                                      inv.setEditingHoldingQty('');
-                                      inv.setEditingHoldingPrice('');
-                                    }}
-                                    className="h-9 w-9 flex items-center justify-center bg-warmBg-tertiary text-warmText-tertiary rounded-lg hover:bg-warmBg-hover transition-colors"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <div className={`grid ${isManual ? 'grid-cols-2' : 'grid-cols-3'} gap-2 text-xs`}>
-                                  <div>
-                                    <p className="text-warmText-tertiary">Quantita</p>
-                                    <p className="font-bold text-warmText-primary">{holding.quantity}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-warmText-tertiary">{isManual ? 'Prezzo acquisto' : 'PMC'}</p>
-                                    <p className="font-bold text-warmText-primary">{formatCurrency(holding.avgPrice)}</p>
-                                  </div>
-                                  {!isManual && (
-                                    <div>
-                                      <p className="text-warmText-tertiary">Prezzo</p>
-                                      <p className="font-bold text-warmText-primary">
-                                        {price ? formatCurrency(price.priceEur) : '-'}
-                                        {inv.pricesLoading && <Loader2 className="inline w-3 h-3 ml-1 animate-spin" />}
-                                      </p>
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Modifica holding button */}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    inv.setEditingHoldingKey(`${account.id}:${holding.symbol}`);
-                                    inv.setEditingHoldingQty(String(holding.quantity).replace('.', ','));
-                                    inv.setEditingHoldingPrice(String(holding.avgPrice).replace('.', ','));
-                                  }}
-                                  className="w-full h-8 bg-warmBg-tertiary text-warmText-secondary rounded-lg text-xs font-medium hover:bg-warmBg-hover transition-colors flex items-center justify-center gap-1.5"
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                  Modifica
-                                </button>
-
-                                {/* Price Chart (only for market assets) */}
-                                {!isManual && (
-                                  <AssetPriceChart symbol={holding.symbol} avgPrice={holding.avgPrice} />
-                                )}
-
-                                {/* Sell button */}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    inv.setSellingHolding({ accountId: account.id, holding });
-                                    inv.setSellQuantity('');
-                                    inv.setSellPrice(isManual ? '' : (price ? String(price.priceEur).replace('.', ',') : ''));
-                                  }}
-                                  className="w-full h-9 bg-warmData-expense/10 text-warmData-expense rounded-lg text-xs font-medium hover:bg-warmData-expense/20 transition-colors flex items-center justify-center gap-1.5"
-                                >
-                                  <DollarSign className="w-3.5 h-3.5" />
-                                  Vendi
-                                </button>
-                              </>
-                            )}
-
-                            {/* Transaction history */}
-                            {(inv.rawTransactionsMap[account.id] || [])
-                              .filter(t => t.asset_symbol === holding.symbol)
-                              .slice(0, 5)
-                              .map(txn => (
-                                <div key={txn.id} className="flex items-center justify-between text-[10px] py-1">
-                                  <div className="flex items-center gap-1.5">
-                                    {txn.transaction_type === 'buy' ? (
-                                      <TrendingUp className="w-3 h-3 text-warmData-income" />
-                                    ) : (
-                                      <TrendingDown className="w-3 h-3 text-warmData-expense" />
-                                    )}
-                                    <span className="text-warmText-secondary">{txn.transaction_date}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-warmText-primary font-medium">
-                                      {txn.quantity} x {formatCurrency(txn.price_per_unit)}
-                                    </span>
-                                    <button
-                                      onClick={() => inv.startEditTransaction(txn, account.id)}
-                                      className="w-6 h-6 flex items-center justify-center text-warmText-muted hover:text-warmText-secondary rounded"
-                                    >
-                                      <Pencil className="w-2.5 h-2.5" />
-                                    </button>
-                                    <button
-                                      onClick={() => inv.setDeletingTxnId(txn.id)}
-                                      className="w-6 h-6 flex items-center justify-center text-warmText-muted hover:text-warmData-expense rounded"
-                                    >
-                                      <Trash2 className="w-2.5 h-2.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
+                      {/* Row 2: Qtà | PMC | Prezzo (always visible) */}
+                      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-warmText-tertiary">
+                        <span>Qtà: <span className="font-semibold text-warmText-secondary">{holding.quantity}</span></span>
+                        <span>PMC: <span className="font-semibold text-warmText-secondary">{formatCurrency(holding.avgPrice)}</span></span>
+                        {!isManual && (
+                          <span>
+                            Prezzo: <span className="font-semibold text-warmText-secondary">
+                              {price ? formatCurrency(price.priceEur) : inv.pricesLoading ? <Loader2 className="inline w-2.5 h-2.5 animate-spin" /> : '-'}
+                            </span>
+                          </span>
                         )}
                       </div>
-                    );
-                  })
-                )}
+
+                      {/* Expanded holding details (chart, edit, sell, history) */}
+                      {isHoldingExpanded && (
+                        <div className="mt-3 pt-3 border-t border-warmBg-tertiary space-y-2 animate-cardEnter">
+                          {inv.editingHoldingKey === `${account.id}:${holding.symbol}` ? (
+                            /* Inline holding adjustment form */
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-warmText-secondary">Modifica posizione</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-warmText-tertiary block mb-1">Quantità</label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={inv.editingHoldingQty}
+                                    onChange={(e) => inv.setEditingHoldingQty(e.target.value)}
+                                    placeholder={String(holding.quantity)}
+                                    className="w-full h-9 bg-warmBg-secondary rounded-lg px-2 text-warmText-primary text-xs focus:outline-none focus:ring-2 focus:ring-warmAccent-primary focus:ring-opacity-50"
+                                    autoFocus
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-warmText-tertiary block mb-1">Prezzo medio</label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={inv.editingHoldingPrice}
+                                    onChange={(e) => inv.setEditingHoldingPrice(e.target.value)}
+                                    placeholder={String(holding.avgPrice).replace('.', ',')}
+                                    className="w-full h-9 bg-warmBg-secondary rounded-lg px-2 text-warmText-primary text-xs focus:outline-none focus:ring-2 focus:ring-warmAccent-primary focus:ring-opacity-50"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => inv.handleAdjustHolding(account, holding)}
+                                  className="flex-1 h-9 bg-warmAccent-primary text-white rounded-lg text-xs font-medium hover:bg-warmAccent-hover transition-colors"
+                                >
+                                  Salva
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    inv.setEditingHoldingKey(null);
+                                    inv.setEditingHoldingQty('');
+                                    inv.setEditingHoldingPrice('');
+                                  }}
+                                  className="h-9 w-9 flex items-center justify-center bg-warmBg-tertiary text-warmText-tertiary rounded-lg hover:bg-warmBg-hover transition-colors"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Modifica holding button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  inv.setEditingHoldingKey(`${account.id}:${holding.symbol}`);
+                                  inv.setEditingHoldingQty(String(holding.quantity).replace('.', ','));
+                                  inv.setEditingHoldingPrice(String(holding.avgPrice).replace('.', ','));
+                                }}
+                                className="w-full h-8 bg-warmBg-tertiary text-warmText-secondary rounded-lg text-xs font-medium hover:bg-warmBg-hover transition-colors flex items-center justify-center gap-1.5"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                Modifica
+                              </button>
+
+                              {/* Price Chart (only for market assets) */}
+                              {!isManual && (
+                                <AssetPriceChart symbol={holding.symbol} avgPrice={holding.avgPrice} />
+                              )}
+
+                              {/* Sell button */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  inv.setSellingHolding({ accountId: account.id, holding });
+                                  inv.setSellQuantity('');
+                                  inv.setSellPrice(isManual ? '' : (price ? String(price.priceEur).replace('.', ',') : ''));
+                                }}
+                                className="w-full h-9 bg-warmData-expense/10 text-warmData-expense rounded-lg text-xs font-medium hover:bg-warmData-expense/20 transition-colors flex items-center justify-center gap-1.5"
+                              >
+                                <DollarSign className="w-3.5 h-3.5" />
+                                Vendi
+                              </button>
+
+                              {/* Move button — solo visibile se ci sono altri conti */}
+                              {inv.accounts.length > 1 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    inv.setMovingHolding({ accountId: account.id, holding });
+                                    inv.setMoveQuantity('');
+                                    inv.setMoveDestination('');
+                                  }}
+                                  className="w-full h-9 bg-warmData-investment/10 text-warmData-investment rounded-lg text-xs font-medium hover:bg-warmData-investment/20 transition-colors flex items-center justify-center gap-1.5"
+                                >
+                                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                                  Sposta
+                                </button>
+                              )}
+                            </>
+                          )}
+
+                          {/* Transaction history */}
+                          {(inv.rawTransactionsMap[account.id] || [])
+                            .filter(t => t.asset_symbol === holding.symbol)
+                            .slice(0, 5)
+                            .map(txn => (
+                              <div key={txn.id} className="flex items-center justify-between text-[10px] py-1">
+                                <div className="flex items-center gap-1.5">
+                                  {txn.transaction_type === 'buy' ? (
+                                    <TrendingUp className="w-3 h-3 text-warmData-income" />
+                                  ) : (
+                                    <TrendingDown className="w-3 h-3 text-warmData-expense" />
+                                  )}
+                                  <span className="text-warmText-secondary">{txn.transaction_date}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-warmText-primary font-medium">
+                                    {txn.quantity} x {formatCurrency(txn.price_per_unit)}
+                                  </span>
+                                  <button
+                                    onClick={() => inv.startEditTransaction(txn, account.id)}
+                                    className="w-6 h-6 flex items-center justify-center text-warmText-muted hover:text-warmText-secondary rounded"
+                                  >
+                                    <Pencil className="w-2.5 h-2.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => inv.setDeletingTxnId(txn.id)}
+                                    className="w-6 h-6 flex items-center justify-center text-warmText-muted hover:text-warmData-expense rounded"
+                                  >
+                                    <Trash2 className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -913,18 +890,6 @@ export default function InvestmentAccountsList({
               </p>
             )}
 
-            <div>
-              <label className="text-xs text-warmText-tertiary mb-1 block">Destinazione proventi</label>
-              <select
-                value={inv.sellDestination}
-                onChange={(e) => inv.setSellDestination(e.target.value)}
-                className="w-full h-11 bg-warmBg-tertiary rounded-xl px-3 text-warmText-primary text-base md:text-sm focus:outline-none focus:ring-2 focus:ring-warmData-expense focus:ring-opacity-50 appearance-none"
-              >
-                <option value="cash">Liquidita nel conto</option>
-                <option value="unallocated_investments">Non destinati Investimenti</option>
-                <option value="unallocated_savings">Non destinati Risparmi</option>
-              </select>
-            </div>
 
             <button
               onClick={inv.handleSell}
