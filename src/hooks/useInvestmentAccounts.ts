@@ -44,7 +44,6 @@ export interface InvestmentDistributionData {
 
 interface UseInvestmentAccountsParams {
   userId: string;
-  investmentsUnallocated: number;
   onAccountsChanged?: () => void;
   onTotalMarketValue?: (value: number, totalCostBasis: number) => void;
   onDistributionData?: (data: InvestmentDistributionData) => void;
@@ -78,14 +77,12 @@ export function formatCurrency(value: number): string {
  * con rollback esplicito in caso di fallimento parziale.
  *
  * @param params.userId - ID utente autenticato (filtro RLS)
- * @param params.investmentsUnallocated - Saldo corrente dei fondi non destinati investimenti
  * @param params.onAccountsChanged - Callback invocato dopo ogni write DB riuscito
  * @param params.onTotalMarketValue - Callback con (marketValue, costBasis) totali del portafoglio
  * @returns Stato UI (form, loading), dati (accounts, holdings, prices) e action handlers
  */
 export function useInvestmentAccounts({
   userId,
-  investmentsUnallocated,
   onAccountsChanged,
   onTotalMarketValue,
   onDistributionData,
@@ -133,6 +130,11 @@ export function useInvestmentAccounts({
   const [sellQuantity, setSellQuantity] = useState('');
   const [sellPrice, setSellPrice] = useState('');
   const [sellDestination, setSellDestination] = useState<string>('cash');
+
+  // ── Move holding form ────────────────────────────────────────────
+  const [movingHolding, setMovingHolding] = useState<{ accountId: string; holding: Holding } | null>(null);
+  const [moveQuantity, setMoveQuantity] = useState('');
+  const [moveDestination, setMoveDestination] = useState<string>('');
 
   // ── Transaction edit/delete ──────────────────────────────────────
   const [expandedHolding, setExpandedHolding] = useState<string | null>(null);
@@ -213,23 +215,72 @@ export function useInvestmentAccounts({
     loadAccounts();
   }, [loadAccounts]);
 
+  // Known CoinGecko IDs for common crypto symbols — used as fallback when the
+  // asset_prices_cache entry doesn't exist yet (e.g. first load after manual buy).
+  const KNOWN_CRYPTO_IDS: Record<string, string> = {
+    BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', XRP: 'ripple',
+    ADA: 'cardano', DOT: 'polkadot', AVAX: 'avalanche-2', MATIC: 'matic-network',
+    LINK: 'chainlink', UNI: 'uniswap', ATOM: 'cosmos', NEAR: 'near',
+    USDT: 'tether', USDC: 'usd-coin', DAI: 'dai',
+    PAXG: 'pax-gold', BNB: 'binancecoin', LTC: 'litecoin', BCH: 'bitcoin-cash',
+    DOGE: 'dogecoin', SHIB: 'shiba-inu', TON: 'the-open-network',
+    PEPE: 'pepe', WIF: 'dogwifcoin', POL: 'matic-network',
+  };
+
   // Fetch market prices when holdings change (exclude manual assets)
   useEffect(() => {
     const allSymbols = new Set<string>();
+    const cryptoSymbols = new Set<string>();
     for (const holdings of Object.values(holdingsMap)) {
       for (const h of holdings) {
-        if (h.type !== 'manual') allSymbols.add(h.symbol);
+        if (h.type === 'manual') continue;
+        allSymbols.add(h.symbol);
+        if (h.type === 'crypto') cryptoSymbols.add(h.symbol);
       }
     }
-    if (allSymbols.size > 0) {
-      setPricesLoading(true);
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        fetchMarketPrices([...allSymbols], undefined, session?.access_token)
-          .then(setMarketPrices)
-          .finally(() => setPricesLoading(false));
-      });
-    }
-  }, [holdingsMap]);
+    if (allSymbols.size === 0) return;
+
+    setPricesLoading(true);
+
+    const loadPrices = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      // Build cryptoMap: hardcoded fallback first, then asset_prices_cache for unknowns
+      let cryptoMap: Map<string, string> | undefined;
+      if (cryptoSymbols.size > 0) {
+        cryptoMap = new Map<string, string>();
+
+        for (const symbol of cryptoSymbols) {
+          const id = KNOWN_CRYPTO_IDS[symbol];
+          if (id) cryptoMap.set(symbol, id);
+        }
+
+        // For any crypto not in the hardcoded map, look up from asset_prices_cache
+        const unknowns = [...cryptoSymbols].filter(s => !cryptoMap!.has(s));
+        if (unknowns.length > 0) {
+          const { data: cacheRows } = await supabase
+            .from('asset_prices_cache')
+            .select('symbol, coingecko_id')
+            .in('symbol', unknowns)
+            .not('coingecko_id', 'is', null);
+          for (const row of cacheRows ?? []) {
+            if (row.coingecko_id) cryptoMap.set(row.symbol, row.coingecko_id);
+          }
+        }
+
+        if (cryptoMap.size === 0) cryptoMap = undefined;
+      }
+
+      try {
+        const prices = await fetchMarketPrices([...allSymbols], cryptoMap, session?.access_token);
+        setMarketPrices(prices);
+      } finally {
+        setPricesLoading(false);
+      }
+    };
+
+    loadPrices();
+  }, [holdingsMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Report total market value to parent
   useEffect(() => {
@@ -325,19 +376,6 @@ export function useInvestmentAccounts({
       .eq('user_id', userId);
     if (error) {
       console.error('CRITICAL: Rollback failed for account', accountId, error);
-      return false;
-    }
-    return true;
-  }
-
-  /** Attempt to restore unallocated investments balance */
-  async function rollbackUnallocatedInvestments(originalBalance: number): Promise<boolean> {
-    const { error } = await supabase
-      .from('unallocated_balances')
-      .update({ investments_unallocated: originalBalance })
-      .eq('user_id', userId);
-    if (error) {
-      console.error('CRITICAL: Rollback failed for unallocated_investments', error);
       return false;
     }
     return true;
@@ -444,46 +482,18 @@ export function useInvestmentAccounts({
       toast.error('Importo non valido');
       return;
     }
-    if (amount > investmentsUnallocated) {
-      toast.error(`Fondi insufficienti (disponibili: ${formatCurrency(investmentsUnallocated)})`);
-      return;
-    }
 
-    const originalUnallocated = investmentsUnallocated;
-    const originalCashBalance = Number(account.cash_balance);
-
-    // Step 1: Decrease unallocated
-    const { error: step1Error } = await supabase
-      .from('unallocated_balances')
-      .update({
-        investments_unallocated: Math.round((originalUnallocated - amount) * 100) / 100,
-      })
-      .eq('user_id', userId);
-
-    if (step1Error) {
-      console.error('Error updating unallocated:', step1Error);
-      toast.error('Errore nel deposito');
-      return;
-    }
-
-    // Step 2: Increase account cash_balance
-    const { error: step2Error } = await supabase
+    const { error } = await supabase
       .from('investment_accounts')
       .update({
-        cash_balance: Math.round((originalCashBalance + amount) * 100) / 100,
+        cash_balance: Math.round((Number(account.cash_balance) + amount) * 100) / 100,
       })
       .eq('id', account.id)
       .eq('user_id', userId);
 
-    if (step2Error) {
-      console.error('Error updating account cash balance:', step2Error);
-      // ROLLBACK Step 1
-      const rolledBack = await rollbackUnallocatedInvestments(originalUnallocated);
-      if (rolledBack) {
-        toast.error('Deposito fallito. Saldo ripristinato.');
-      } else {
-        toast.error('ERRORE CRITICO: deposito fallito e rollback fallito. Contatta il supporto.');
-      }
+    if (error) {
+      console.error('Error updating account cash balance:', error);
+      toast.error('Errore nel deposito');
       return;
     }
 
@@ -538,54 +548,22 @@ export function useInvestmentAccounts({
       return;
     }
 
-    // Step 2: Increase destination (with rollback on failure)
-    let destinationName = '';
-    let step2Error: unknown = null;
-
-    try {
-      if (transferDestination === 'unallocated_investments') {
-        destinationName = 'Non destinati Investimenti';
-        const { error } = await supabase
-          .from('unallocated_balances')
-          .update({
-            investments_unallocated: Math.round((investmentsUnallocated + amount) * 100) / 100,
-          })
-          .eq('user_id', userId);
-        step2Error = error;
-      } else if (transferDestination === 'unallocated_savings') {
-        destinationName = 'Non destinati Risparmi';
-        const { data: balances } = await supabase
-          .from('unallocated_balances')
-          .select('savings_unallocated')
-          .eq('user_id', userId)
-          .single();
-        const currentSavings = balances ? Number(balances.savings_unallocated) : 0;
-        const { error } = await supabase
-          .from('unallocated_balances')
-          .update({
-            savings_unallocated: Math.round((currentSavings + amount) * 100) / 100,
-          })
-          .eq('user_id', userId);
-        step2Error = error;
-      } else {
-        const destAccount = accounts.find(a => a.id === transferDestination);
-        if (!destAccount) {
-          step2Error = new Error('Conto destinazione non trovato');
-        } else {
-          destinationName = destAccount.name;
-          const { error } = await supabase
-            .from('investment_accounts')
-            .update({
-              cash_balance: Math.round((Number(destAccount.cash_balance) + amount) * 100) / 100,
-            })
-            .eq('id', destAccount.id)
-            .eq('user_id', userId);
-          step2Error = error;
-        }
-      }
-    } catch (err) {
-      step2Error = err;
+    // Step 2: Increase destination cash_balance
+    const destAccount = accounts.find(a => a.id === transferDestination);
+    if (!destAccount) {
+      toast.error('Conto destinazione non trovato');
+      // ROLLBACK Step 1
+      await rollbackCashBalance(sourceAccount.id, originalSourceBalance);
+      return;
     }
+
+    const { error: step2Error } = await supabase
+      .from('investment_accounts')
+      .update({
+        cash_balance: Math.round((Number(destAccount.cash_balance) + amount) * 100) / 100,
+      })
+      .eq('id', destAccount.id)
+      .eq('user_id', userId);
 
     if (step2Error) {
       console.error('Error in transfer destination:', step2Error);
@@ -599,7 +577,7 @@ export function useInvestmentAccounts({
       return;
     }
 
-    toast.success(`Trasferiti ${formatCurrency(amount)} da ${sourceAccount.name} a ${destinationName}`);
+    toast.success(`Trasferiti ${formatCurrency(amount)} da ${sourceAccount.name} a ${destAccount.name}`);
     setTransferringId(null);
     setTransferAmount('');
     setTransferDestination('');
@@ -678,6 +656,14 @@ export function useInvestmentAccounts({
 
       toast.error("Acquisto fallito. Transazione annullata.");
       return;
+    }
+
+    // Persist coingecko_id for future price lookups (fire-and-forget)
+    if (selectedAsset.coingecko_id) {
+      supabase.from('asset_prices_cache').upsert(
+        { symbol: selectedAsset.symbol, coingecko_id: selectedAsset.coingecko_id, asset_type: 'crypto', last_updated: new Date().toISOString() },
+        { onConflict: 'symbol' }
+      );
     }
 
     toast.success(`Acquistati ${quantity} ${selectedAsset.symbol} a ${formatCurrency(pricePerUnit)}/unità`);
@@ -825,47 +811,14 @@ export function useInvestmentAccounts({
       return;
     }
 
-    // Step 2: Route proceeds based on destination
-    let step2Error: unknown = null;
-
-    try {
-      if (sellDestination === 'cash') {
-        const { error } = await supabase
-          .from('investment_accounts')
-          .update({
-            cash_balance: Math.round((originalCashBalance + totalAmount) * 100) / 100,
-          })
-          .eq('id', account.id)
-          .eq('user_id', userId);
-        step2Error = error;
-      } else if (sellDestination === 'unallocated_investments') {
-        const { data: balances } = await supabase
-          .from('unallocated_balances')
-          .select('investments_unallocated')
-          .eq('user_id', userId)
-          .single();
-        const current = balances ? Number(balances.investments_unallocated) : 0;
-        const { error } = await supabase
-          .from('unallocated_balances')
-          .update({ investments_unallocated: Math.round((current + totalAmount) * 100) / 100 })
-          .eq('user_id', userId);
-        step2Error = error;
-      } else if (sellDestination === 'unallocated_savings') {
-        const { data: balances } = await supabase
-          .from('unallocated_balances')
-          .select('savings_unallocated')
-          .eq('user_id', userId)
-          .single();
-        const current = balances ? Number(balances.savings_unallocated) : 0;
-        const { error } = await supabase
-          .from('unallocated_balances')
-          .update({ savings_unallocated: Math.round((current + totalAmount) * 100) / 100 })
-          .eq('user_id', userId);
-        step2Error = error;
-      }
-    } catch (err) {
-      step2Error = err;
-    }
+    // Step 2: Route proceeds to cash balance
+    const { error: step2Error } = await supabase
+      .from('investment_accounts')
+      .update({
+        cash_balance: Math.round((originalCashBalance + totalAmount) * 100) / 100,
+      })
+      .eq('id', account.id)
+      .eq('user_id', userId);
 
     if (step2Error) {
       console.error('Error routing sell proceeds:', step2Error);
@@ -893,6 +846,97 @@ export function useInvestmentAccounts({
     setSellQuantity('');
     setSellPrice('');
     setSellDestination('cash');
+    await loadAccounts();
+    onAccountsChanged?.();
+  };
+
+  const handleMoveHolding = async () => {
+    if (!movingHolding) return;
+
+    const quantity = parseEuropeanDecimal(moveQuantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      toast.error('Quantità non valida');
+      return;
+    }
+    if (quantity > movingHolding.holding.quantity) {
+      toast.error(`Quantità massima: ${movingHolding.holding.quantity}`);
+      return;
+    }
+    if (!moveDestination) {
+      toast.error('Seleziona un conto destinazione');
+      return;
+    }
+
+    const destAccount = accounts.find(a => a.id === moveDestination);
+    if (!destAccount) {
+      toast.error('Conto destinazione non trovato');
+      return;
+    }
+
+    const { holding, accountId: sourceAccountId } = movingHolding;
+    const pricePerUnit = holding.avgPrice;
+    const totalAmount = Math.round(quantity * pricePerUnit * 100) / 100;
+    const today = new Date().toISOString().split('T')[0];
+
+    // Step 1: INSERT sell in source account (no cash impact)
+    const { data: sellData, error: step1Error } = await supabase
+      .from('investment_transactions')
+      .insert({
+        user_id: userId,
+        investment_account_id: sourceAccountId,
+        asset_symbol: holding.symbol,
+        asset_name: holding.name,
+        asset_type: holding.type,
+        transaction_type: 'sell',
+        quantity,
+        price_per_unit: pricePerUnit,
+        total_amount: totalAmount,
+        currency: 'EUR',
+        transaction_date: today,
+      })
+      .select('id')
+      .single();
+
+    if (step1Error || !sellData) {
+      console.error('Error inserting move-sell transaction:', step1Error);
+      toast.error('Errore nel trasferimento asset');
+      return;
+    }
+
+    // Step 2: INSERT buy in destination account (no cash impact)
+    const { error: step2Error } = await supabase
+      .from('investment_transactions')
+      .insert({
+        user_id: userId,
+        investment_account_id: moveDestination,
+        asset_symbol: holding.symbol,
+        asset_name: holding.name,
+        asset_type: holding.type,
+        transaction_type: 'buy',
+        quantity,
+        price_per_unit: pricePerUnit,
+        total_amount: totalAmount,
+        currency: 'EUR',
+        transaction_date: today,
+      });
+
+    if (step2Error) {
+      console.error('Error inserting move-buy transaction:', step2Error);
+      // ROLLBACK: delete the sell we just inserted
+      await supabase
+        .from('investment_transactions')
+        .delete()
+        .eq('id', sellData.id)
+        .eq('user_id', userId);
+      toast.error('Trasferimento fallito. Operazione annullata.');
+      return;
+    }
+
+    const qtyStr = quantity % 1 === 0 ? String(quantity) : quantity.toFixed(6);
+    toast.success(`Spostati ${qtyStr} ${holding.symbol} in ${destAccount.name}`);
+    setMovingHolding(null);
+    setMoveQuantity('');
+    setMoveDestination('');
     await loadAccounts();
     onAccountsChanged?.();
   };
@@ -1232,6 +1276,12 @@ export function useInvestmentAccounts({
     sellQuantity, setSellQuantity,
     sellPrice, setSellPrice,
     sellDestination, setSellDestination,
+
+    // Move holding form
+    movingHolding, setMovingHolding,
+    moveQuantity, setMoveQuantity,
+    moveDestination, setMoveDestination,
+    handleMoveHolding,
 
     // Transaction edit/delete
     expandedHolding, setExpandedHolding,
