@@ -405,7 +405,7 @@ export default function MonthlyDashboardPage() {
 
   return (
     <div
-      className="min-h-screen bg-warmBg-primary"
+      className={`min-h-screen bg-warmBg-primary ${selectionMode && selectedIds.size > 0 ? 'pb-24' : ''}`}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -424,7 +424,7 @@ export default function MonthlyDashboardPage() {
         <div className="flex items-center justify-between mb-3">
           <button
             onClick={goToPreviousMonth}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-warmBg-tertiary/60 hover:bg-warmBg-tertiary transition-colors active:scale-95"
+            className="w-11 h-11 flex items-center justify-center rounded-full bg-warmBg-tertiary/60 hover:bg-warmBg-tertiary transition-colors active:scale-95"
           >
             <ChevronLeft className="w-5 h-5 text-warmText-secondary" />
           </button>
@@ -435,7 +435,7 @@ export default function MonthlyDashboardPage() {
 
           <button
             onClick={goToNextMonth}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-warmBg-tertiary/60 hover:bg-warmBg-tertiary transition-colors active:scale-95"
+            className="w-11 h-11 flex items-center justify-center rounded-full bg-warmBg-tertiary/60 hover:bg-warmBg-tertiary transition-colors active:scale-95"
           >
             <ChevronRight className="w-5 h-5 text-warmText-secondary" />
           </button>

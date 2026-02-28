@@ -52,6 +52,7 @@ export default function BulkDeleteActionBar({
           </div>
         </div>
       </div>
+      <div className="h-[env(safe-area-inset-bottom)]" />
     </div>
   );
 }

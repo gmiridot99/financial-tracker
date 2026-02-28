@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { ChevronLeft, Wallet, Loader2 } from 'lucide-react';
 import { updateWealthSnapshotFromAccounts } from '@/lib/wealth';
 import { supabase } from '@/lib/supabase';
@@ -35,10 +35,8 @@ export default function PatrimonioPage() {
   const [savingsTotal, setSavingsTotal] = useState<number>(0);
   const [pricesLoading, setPricesLoading] = useState<boolean>(false);
   const [distributionMode, setDistributionMode] = useState<DistributionMode>('per-asset');
-  const [assetSlices, setAssetSlices] = useState<AssetSlice[]>([]);
-  const [accountSlices, setAccountSlices] = useState<AccountSlice[]>([]);
   const [savingsAccountsData, setSavingsAccountsData] = useState<{ id: string; name: string; balance: number }[]>([]);
-  const [investAccounts, setInvestAccounts] = useState<AccountInfo[]>([]);
+  const [invDistData, setInvDistData] = useState<InvestmentDistributionData | null>(null);
   const snapshotUpdatedRef = useRef(false);
 
   const checkWealthSnapshot = useCallback(async () => {
@@ -105,67 +103,48 @@ export default function PatrimonioPage() {
   }, []);
 
   // Investment distribution data callback
-  const investDistRef = useRef<InvestmentDistributionData | null>(null);
   const handleDistributionData = useCallback((data: InvestmentDistributionData) => {
-    investDistRef.current = data;
-    setInvestAccounts(
-      data.accountValues.map(a => ({
-        id: a.id,
-        name: a.name,
-        holdingsValue: a.holdingsValue,
-        cashBalance: a.cashBalance,
-      }))
-    );
+    setInvDistData(data);
   }, []);
 
-  // Build combined distribution slices when any data changes
-  useEffect(() => {
-    const invDist = investDistRef.current;
-
-    // Per-asset slices: individual assets + total liquidity
-    const newAssetSlices: AssetSlice[] = [];
+  // Derived: per-asset distribution slices
+  const assetSlices = useMemo((): AssetSlice[] => {
+    const slices: AssetSlice[] = [];
     let totalLiquidity = 0;
+    for (const acc of savingsAccountsData) totalLiquidity += acc.balance;
+    if (invDistData) {
+      for (const acc of invDistData.accountValues) totalLiquidity += acc.cashBalance;
+      for (const asset of invDistData.assetValues) slices.push({ name: asset.name, value: asset.value });
+    }
+    if (totalLiquidity > 0) slices.push({ name: 'Liquidità', value: Math.round(totalLiquidity * 100) / 100 });
+    return slices;
+  }, [savingsAccountsData, invDistData]);
 
-    // Savings accounts balances as liquidity
+  // Derived: per-account distribution slices
+  const accountSlices = useMemo((): AccountSlice[] => {
+    const slices: AccountSlice[] = [];
     for (const acc of savingsAccountsData) {
-      totalLiquidity += acc.balance;
+      if (acc.balance > 0) slices.push({ name: acc.name, value: Math.round(acc.balance * 100) / 100 });
     }
-
-    // Investment cash balances as liquidity
-    if (invDist) {
-      for (const acc of invDist.accountValues) {
-        totalLiquidity += acc.cashBalance;
-      }
-      for (const asset of invDist.assetValues) {
-        newAssetSlices.push({ name: asset.name, value: asset.value });
-      }
-    }
-
-    if (totalLiquidity > 0) {
-      newAssetSlices.push({ name: 'Liquidità', value: Math.round(totalLiquidity * 100) / 100 });
-    }
-
-    // Per-conto slices: individual accounts
-    const newAccountSlices: AccountSlice[] = [];
-
-    for (const acc of savingsAccountsData) {
-      if (acc.balance > 0) {
-        newAccountSlices.push({ name: acc.name, value: Math.round(acc.balance * 100) / 100 });
-      }
-    }
-
-    if (invDist) {
-      for (const acc of invDist.accountValues) {
+    if (invDistData) {
+      for (const acc of invDistData.accountValues) {
         const accTotal = acc.cashBalance + acc.holdingsValue;
-        if (accTotal > 0) {
-          newAccountSlices.push({ name: acc.name, value: Math.round(accTotal * 100) / 100 });
-        }
+        if (accTotal > 0) slices.push({ name: acc.name, value: Math.round(accTotal * 100) / 100 });
       }
     }
+    return slices;
+  }, [savingsAccountsData, invDistData]);
 
-    setAssetSlices(newAssetSlices);
-    setAccountSlices(newAccountSlices);
-  }, [savingsAccountsData, totalMarketValue, totalCashBalance]);
+  // Derived: investment accounts for performance chart
+  const investAccounts = useMemo((): AccountInfo[] => {
+    if (!invDistData) return [];
+    return invDistData.accountValues.map(a => ({
+      id: a.id,
+      name: a.name,
+      holdingsValue: a.holdingsValue,
+      cashBalance: a.cashBalance,
+    }));
+  }, [invDistData]);
 
   useEffect(() => {
     if (!loading && !user) {
