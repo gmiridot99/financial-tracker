@@ -16,6 +16,7 @@ import {
   TrendingDown,
   Search,
   FileEdit,
+  Wallet,
 } from 'lucide-react';
 import { useInvestmentAccounts, formatCurrency, parseEuropeanDecimal } from '@/hooks/useInvestmentAccounts';
 import { usePacRules } from '@/hooks/usePacRules';
@@ -273,93 +274,120 @@ export default function InvestmentAccountsList({
                 )}
               </div>
 
-              {/* Cash balance mini */}
-              <div className="flex items-center gap-2 mt-2">
-                <span className="text-xs text-warmText-tertiary">Liquidita:</span>
-                {inv.editingCashBalanceId === account.id ? (
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={inv.editingCashBalanceValue}
-                      onChange={(e) => inv.setEditingCashBalanceValue(e.target.value)}
-                      className="h-7 w-28 bg-warmBg-tertiary rounded-lg px-2 text-warmText-primary text-xs font-bold text-right focus:outline-none focus:ring-2 focus:ring-warmData-investment focus:ring-opacity-50"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') inv.handleEditCashBalance(account.id);
-                        if (e.key === 'Escape') {
-                          inv.setEditingCashBalanceId(null);
-                          inv.setEditingCashBalanceValue('');
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => inv.handleEditCashBalance(account.id)}
-                      className="w-6 h-6 flex items-center justify-center text-warmData-income hover:bg-warmBg-tertiary rounded transition-colors"
-                    >
-                      <Check className="w-3 h-3" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        inv.setEditingCashBalanceId(null);
-                        inv.setEditingCashBalanceValue('');
-                      }}
-                      className="w-6 h-6 flex items-center justify-center text-warmText-tertiary hover:bg-warmBg-tertiary rounded transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+              {/* ── Cash Zone (nested card) ─────────────────────── */}
+              <div className="bg-warmBg-tertiary/50 rounded-xl p-3 mt-3">
+                {/* Cash header row */}
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full bg-warmData-savings/15 flex items-center justify-center flex-shrink-0">
+                    <Wallet className="w-4 h-4 text-warmData-savings" />
                   </div>
-                ) : (
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-bold text-warmText-secondary">{formatCurrency(cashBalance)}</span>
-                    <button
-                      onClick={() => {
-                        inv.setEditingCashBalanceId(account.id);
-                        inv.setEditingCashBalanceValue(cashBalance.toFixed(2).replace('.', ','));
-                      }}
-                      className="w-5 h-5 flex items-center justify-center text-warmText-muted hover:text-warmText-secondary hover:bg-warmBg-tertiary rounded transition-colors"
-                    >
-                      <Pencil className="w-2.5 h-2.5" />
-                    </button>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[11px] font-medium text-warmText-tertiary uppercase tracking-wide">Cassa</span>
+                    <div className="flex items-center gap-1">
+                      {inv.editingCashBalanceId === account.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={inv.editingCashBalanceValue}
+                            onChange={(e) => inv.setEditingCashBalanceValue(e.target.value)}
+                            className="h-7 w-28 bg-warmBg-secondary rounded-lg px-2 text-warmText-primary text-sm font-bold text-right focus:outline-none focus:ring-2 focus:ring-warmData-savings focus:ring-opacity-50"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') inv.handleEditCashBalance(account.id);
+                              if (e.key === 'Escape') {
+                                inv.setEditingCashBalanceId(null);
+                                inv.setEditingCashBalanceValue('');
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => inv.handleEditCashBalance(account.id)}
+                            className="w-6 h-6 flex items-center justify-center text-warmData-income hover:bg-warmBg-secondary rounded transition-colors"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              inv.setEditingCashBalanceId(null);
+                              inv.setEditingCashBalanceValue('');
+                            }}
+                            className="w-6 h-6 flex items-center justify-center text-warmText-tertiary hover:bg-warmBg-secondary rounded transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-sm font-bold text-warmText-primary">{formatCurrency(cashBalance)}</span>
+                          <button
+                            onClick={() => {
+                              inv.setEditingCashBalanceId(account.id);
+                              inv.setEditingCashBalanceValue(cashBalance.toFixed(2).replace('.', ','));
+                            }}
+                            className="w-5 h-5 flex items-center justify-center text-warmText-muted hover:text-warmText-secondary hover:bg-warmBg-secondary rounded transition-colors"
+                          >
+                            <Pencil className="w-2.5 h-2.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                )}
+                </div>
+
+                {/* Cash action buttons */}
+                <div className="flex items-center gap-2 mt-2.5 ml-[42px]">
+                  <button
+                    onClick={() => {
+                      inv.setDepositingId(inv.depositingId === account.id ? null : account.id);
+                      inv.setTransferringId(null);
+                      inv.setBuyingAccountId(null);
+                      inv.setDepositAmount('');
+                    }}
+                    className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-medium transition-colors ${
+                      inv.depositingId === account.id
+                        ? 'bg-warmData-income/20 text-warmData-income'
+                        : 'bg-warmBg-secondary text-warmText-secondary hover:bg-warmBg-hover'
+                    }`}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Deposita
+                  </button>
+                  <button
+                    onClick={() => {
+                      inv.setTransferringId(inv.transferringId === account.id ? null : account.id);
+                      inv.setDepositingId(null);
+                      inv.setBuyingAccountId(null);
+                      inv.setTransferAmount('');
+                      inv.setTransferDestination('');
+                    }}
+                    className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-medium transition-colors ${
+                      inv.transferringId === account.id
+                        ? 'bg-warmData-investment/20 text-warmData-investment'
+                        : 'bg-warmBg-secondary text-warmText-secondary hover:bg-warmBg-hover'
+                    }`}
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    Trasferisci
+                  </button>
+                  <div className="flex-1" />
+                  <button
+                    onClick={() => setDeletingAccount(account)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-warmText-muted hover:text-warmData-expense hover:bg-warmData-expense/10 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
-              {/* Action buttons row */}
-              <div className="flex gap-2 mt-3 flex-wrap">
-                <button
-                  onClick={() => {
-                    inv.setDepositingId(inv.depositingId === account.id ? null : account.id);
-                    inv.setTransferringId(null);
-                    inv.setBuyingAccountId(null);
-                    inv.setDepositAmount('');
-                  }}
-                  className={`flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-medium transition-colors ${
-                    inv.depositingId === account.id
-                      ? 'bg-warmData-income/20 text-warmData-income'
-                      : 'bg-warmBg-tertiary text-warmText-secondary hover:bg-warmBg-hover'
-                  }`}
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Deposita
-                </button>
-                <button
-                  onClick={() => {
-                    inv.setTransferringId(inv.transferringId === account.id ? null : account.id);
-                    inv.setDepositingId(null);
-                    inv.setBuyingAccountId(null);
-                    inv.setTransferAmount('');
-                    inv.setTransferDestination('');
-                  }}
-                  className={`flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-medium transition-colors ${
-                    inv.transferringId === account.id
-                      ? 'bg-warmData-investment/20 text-warmData-investment'
-                      : 'bg-warmBg-tertiary text-warmText-secondary hover:bg-warmBg-hover'
-                  }`}
-                >
-                  <ArrowRightLeft className="w-3.5 h-3.5" />
-                  Trasferisci
-                </button>
+              {/* ── Portafoglio header row ───────────────────────────── */}
+              <div className="flex items-center justify-between mt-3 px-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-warmText-tertiary uppercase tracking-wide">Portafoglio</span>
+                  {totalHoldingsValue > 0 && (
+                    <span className="text-sm font-bold text-warmText-primary">{formatCurrency(totalHoldingsValue)}</span>
+                  )}
+                </div>
                 <button
                   onClick={() => {
                     inv.setBuyingAccountId(inv.buyingAccountId === account.id ? null : account.id);
@@ -372,7 +400,7 @@ export default function InvestmentAccountsList({
                     setManualBuyMode(false);
                     setManualAssetName('');
                   }}
-                  className={`flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-medium transition-colors ${
+                  className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-medium transition-colors ${
                     inv.buyingAccountId === account.id
                       ? 'bg-warmAccent-primary/20 text-warmAccent-primary'
                       : 'bg-warmBg-tertiary text-warmText-secondary hover:bg-warmBg-hover'
@@ -380,12 +408,6 @@ export default function InvestmentAccountsList({
                 >
                   <ShoppingCart className="w-3.5 h-3.5" />
                   Compra
-                </button>
-                <button
-                  onClick={() => setDeletingAccount(account)}
-                  className="flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-medium bg-warmBg-tertiary text-warmText-muted hover:text-warmData-expense hover:bg-warmData-expense/10 transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

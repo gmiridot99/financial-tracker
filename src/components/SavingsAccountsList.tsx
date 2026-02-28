@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Pencil, Trash2, X, Check, PiggyBank, ArrowDownToLine, ArrowLeftRight, Wallet, Shield, Landmark, Building2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Check, PiggyBank, ArrowLeftRight, Wallet, Shield, Landmark, Building2 } from 'lucide-react';
 import CountUp from '@/components/CountUp';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -24,12 +24,10 @@ const SAVINGS_ICONS = [PiggyBank, Wallet, Shield, Landmark];
 
 /**
  * @prop userId - ID utente autenticato
- * @prop savingsUnallocated - Saldo fondi non destinati risparmi
  * @prop onAccountsChanged - Callback dopo ogni operazione DB riuscita
  */
 interface SavingsAccountsListProps {
   userId: string;
-  savingsUnallocated: number;
   onAccountsChanged?: () => void;
 }
 
@@ -41,7 +39,7 @@ interface SavingsAccountsListProps {
  * Tutta la business logic e delegata a `useSavingsAccounts`; questo componente
  * e puro JSX + costanti UI (palette colori, icone).
  */
-export default function SavingsAccountsList({ userId, savingsUnallocated, onAccountsChanged }: SavingsAccountsListProps) {
+export default function SavingsAccountsList({ userId, onAccountsChanged }: SavingsAccountsListProps) {
   const {
     accounts,
     isLoading,
@@ -49,8 +47,6 @@ export default function SavingsAccountsList({ userId, savingsUnallocated, onAcco
     newAccountName, setNewAccountName,
     editingId, setEditingId,
     editingName, setEditingName,
-    depositingId, setDepositingId,
-    depositAmount, setDepositAmount,
     transferringId, setTransferringId,
     transferAmount, setTransferAmount,
     transferDestination, setTransferDestination,
@@ -58,13 +54,12 @@ export default function SavingsAccountsList({ userId, savingsUnallocated, onAcco
     handleEditName,
     handleDelete,
     handleSetPrimary,
-    handleDeposit,
     handleTransfer,
     editingBalanceId, setEditingBalanceId,
     editingBalanceValue, setEditingBalanceValue,
     handleEditBalance,
     formatCurrency,
-  } = useSavingsAccounts({ userId, savingsUnallocated, onAccountsChanged });
+  } = useSavingsAccounts({ userId, onAccountsChanged });
 
   const [deletingAccount, setDeletingAccount] = useState<SavingsAccount | null>(null);
 
@@ -300,82 +295,19 @@ export default function SavingsAccountsList({ userId, savingsUnallocated, onAcco
               </div>
 
               {/* Action Buttons */}
-              {editingId !== account.id && editingBalanceId !== account.id && depositingId !== account.id && transferringId !== account.id && (
+              {editingId !== account.id && editingBalanceId !== account.id && transferringId !== account.id && (
                 <div className="flex gap-2 mt-3 pt-3 border-t border-warmBg-tertiary">
-                  <button
-                    onClick={() => {
-                      setDepositingId(account.id);
-                      setDepositAmount('');
-                      setTransferringId(null);
-                    }}
-                    className="flex-1 h-9 bg-warmBg-tertiary rounded-lg text-xs font-medium text-warmData-savings hover:bg-warmBg-hover transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <ArrowDownToLine className="w-3.5 h-3.5" />
-                    Deposita
-                  </button>
                   <button
                     onClick={() => {
                       setTransferringId(account.id);
                       setTransferAmount('');
                       setTransferDestination('');
-                      setDepositingId(null);
                     }}
                     className="flex-1 h-9 bg-warmBg-tertiary rounded-lg text-xs font-medium text-warmText-secondary hover:bg-warmBg-hover transition-colors flex items-center justify-center gap-1.5"
                   >
                     <ArrowLeftRight className="w-3.5 h-3.5" />
                     Trasferisci
                   </button>
-                </div>
-              )}
-
-              {/* Deposit Form */}
-              {depositingId === account.id && (
-                <div className="mt-3 pt-3 border-t border-warmBg-tertiary">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs text-warmText-tertiary">
-                      Da Non destinati (disponibili: {formatCurrency(savingsUnallocated)})
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setDepositAmount(savingsUnallocated.toFixed(2).replace('.', ','))}
-                      className="text-xs leading-tight font-semibold text-warmAccent-primary hover:text-warmAccent-hover px-1.5 py-0.5 rounded bg-warmAccent-primary bg-opacity-10 hover:bg-opacity-20 transition-colors"
-                    >
-                      MAX
-                    </button>
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={depositAmount}
-                      onChange={(e) => setDepositAmount(e.target.value)}
-                      placeholder="Importo..."
-                      className="flex-1 h-10 bg-warmBg-tertiary rounded-lg px-3 text-warmText-primary text-sm focus:outline-none focus:ring-2 focus:ring-warmData-savings focus:ring-opacity-50"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleDeposit(account);
-                        if (e.key === 'Escape') {
-                          setDepositingId(null);
-                          setDepositAmount('');
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => handleDeposit(account)}
-                      className="h-10 px-4 bg-warmData-savings text-white rounded-lg text-xs font-medium hover:opacity-90 transition-opacity"
-                    >
-                      Conferma
-                    </button>
-                    <button
-                      onClick={() => {
-                        setDepositingId(null);
-                        setDepositAmount('');
-                      }}
-                      className="h-10 w-10 flex items-center justify-center bg-warmBg-tertiary text-warmText-tertiary rounded-lg hover:bg-warmBg-hover transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
                 </div>
               )}
 
@@ -409,7 +341,6 @@ export default function SavingsAccountsList({ userId, savingsUnallocated, onAcco
                     className="w-full h-10 bg-warmBg-tertiary rounded-lg px-3 text-warmText-primary text-sm focus:outline-none focus:ring-2 focus:ring-warmData-savings focus:ring-opacity-50 appearance-none"
                   >
                     <option value="">Seleziona destinazione...</option>
-                    <option value="unallocated">Non destinati</option>
                     {accounts
                       .filter(a => a.id !== account.id)
                       .map(a => (

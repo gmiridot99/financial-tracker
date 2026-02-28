@@ -267,7 +267,7 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
   return (
     <form
       onSubmit={handleSubmit}
-      className="bg-warmBg-tertiary rounded-2xl border border-warmAccent-primary p-4 animate-cardEnter"
+      className="bg-warmData-expense/5 rounded-2xl border border-warmData-expense p-4 animate-cardEnter"
     >
       <div className="space-y-3">
         {/* Amount and Category Row */}

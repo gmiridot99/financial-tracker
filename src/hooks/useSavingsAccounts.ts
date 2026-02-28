@@ -10,7 +10,6 @@ import toast from 'react-hot-toast';
 
 interface UseSavingsAccountsParams {
   userId: string;
-  savingsUnallocated: number;
   onAccountsChanged?: () => void;
 }
 
@@ -23,17 +22,15 @@ interface UseSavingsAccountsParams {
  * - Carica i conti da Supabase al mount (e dopo ogni operazione).
  * - Notifica il parent tramite `onAccountsChanged` dopo ogni write DB riuscito.
  *
- * Depositi e trasferimenti sono atomici con rollback esplicito:
+ * I trasferimenti sono atomici con rollback esplicito:
  * se lo step 2 fallisce, lo step 1 viene revertito al valore originale.
  *
  * @param params.userId - ID utente autenticato (filtro RLS)
- * @param params.savingsUnallocated - Saldo corrente dei fondi non destinati risparmi
  * @param params.onAccountsChanged - Callback invocato dopo ogni write DB riuscito
  * @returns Stato UI (form, loading), dati (accounts) e action handlers
  */
 export function useSavingsAccounts({
   userId,
-  savingsUnallocated,
   onAccountsChanged,
 }: UseSavingsAccountsParams) {
   // ── Core data ────────────────────────────────────────────────────
@@ -51,10 +48,6 @@ export function useSavingsAccounts({
   // ── Edit balance form ────────────────────────────────────────────
   const [editingBalanceId, setEditingBalanceId] = useState<string | null>(null);
   const [editingBalanceValue, setEditingBalanceValue] = useState('');
-
-  // ── Deposit form ─────────────────────────────────────────────────
-  const [depositingId, setDepositingId] = useState<string | null>(null);
-  const [depositAmount, setDepositAmount] = useState('');
 
   // ── Transfer form ────────────────────────────────────────────────
   const [transferringId, setTransferringId] = useState<string | null>(null);
@@ -126,19 +119,6 @@ export function useSavingsAccounts({
       .eq('user_id', userId);
     if (error) {
       console.error('CRITICAL: Rollback failed for savings account', accountId, error);
-      return false;
-    }
-    return true;
-  }
-
-  /** Attempt to restore unallocated savings balance */
-  async function rollbackSavingsUnallocated(originalBalance: number): Promise<boolean> {
-    const { error } = await supabase
-      .from('unallocated_balances')
-      .update({ savings_unallocated: originalBalance })
-      .eq('user_id', userId);
-    if (error) {
-      console.error('CRITICAL: Rollback failed for savings_unallocated', error);
       return false;
     }
     return true;
@@ -287,76 +267,6 @@ export function useSavingsAccounts({
 
   // ── Atomic Financial Operations (with rollback) ──────────────────
 
-  const handleDeposit = async (account: SavingsAccount) => {
-    const amount = parseEuropeanDecimal(depositAmount);
-    if (isNaN(amount) || amount <= 0) {
-      toast.error('Importo non valido');
-      return;
-    }
-    if (amount > savingsUnallocated) {
-      toast.error(`Fondi insufficienti (disponibili: ${formatCurrency(savingsUnallocated)})`);
-      return;
-    }
-
-    const originalUnallocated = savingsUnallocated;
-    const originalBalance = Number(account.balance);
-
-    // Step 1: Decrease savings_unallocated
-    const { error: step1Error } = await supabase
-      .from('unallocated_balances')
-      .update({
-        savings_unallocated: Math.round((originalUnallocated - amount) * 100) / 100,
-      })
-      .eq('user_id', userId);
-
-    if (step1Error) {
-      console.error('Error updating unallocated:', step1Error);
-      toast.error('Errore nel deposito');
-      return;
-    }
-
-    // Step 2: Increase account balance
-    const { error: step2Error } = await supabase
-      .from('savings_accounts')
-      .update({
-        balance: Math.round((originalBalance + amount) * 100) / 100,
-      })
-      .eq('id', account.id)
-      .eq('user_id', userId);
-
-    if (step2Error) {
-      console.error('Error updating account balance:', step2Error);
-      // ROLLBACK Step 1
-      const rolledBack = await rollbackSavingsUnallocated(originalUnallocated);
-      if (rolledBack) {
-        toast.error('Deposito fallito. Saldo ripristinato.');
-      } else {
-        toast.error('ERRORE CRITICO: deposito fallito e rollback fallito. Contatta il supporto.');
-      }
-      return;
-    }
-
-    // Step 3: Create transfer record (non-critical, don't rollback on failure)
-    const { error: transferError } = await supabase
-      .from('savings_transfers')
-      .insert({
-        user_id: userId,
-        from_account_id: null, // Non destinati
-        to_account_id: account.id,
-        amount: Math.round(amount * 100) / 100,
-      });
-
-    if (transferError) {
-      console.error('Error creating transfer record:', transferError);
-    }
-
-    toast.success(`Depositati ${formatCurrency(amount)} in ${account.name}`);
-    setDepositingId(null);
-    setDepositAmount('');
-    await loadAccounts();
-    onAccountsChanged?.();
-  };
-
   const handleTransfer = async (sourceAccount: SavingsAccount) => {
     const amount = parseEuropeanDecimal(transferAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -375,6 +285,12 @@ export function useSavingsAccounts({
       return;
     }
 
+    const destAccount = accounts.find(a => a.id === transferDestination);
+    if (!destAccount) {
+      toast.error('Conto destinazione non trovato');
+      return;
+    }
+
     // Step 1: Decrease source balance
     const newSourceBalance = Math.round((originalSourceBalance - amount) * 100) / 100;
     const { error: step1Error } = await supabase
@@ -389,39 +305,14 @@ export function useSavingsAccounts({
       return;
     }
 
-    // Step 2: Increase destination (with rollback on failure)
-    let destinationName = '';
-    let step2Error: unknown = null;
-
-    try {
-      if (transferDestination === 'unallocated') {
-        destinationName = 'Non destinati';
-        const { error } = await supabase
-          .from('unallocated_balances')
-          .update({
-            savings_unallocated: Math.round((savingsUnallocated + amount) * 100) / 100,
-          })
-          .eq('user_id', userId);
-        step2Error = error;
-      } else {
-        const destAccount = accounts.find(a => a.id === transferDestination);
-        if (!destAccount) {
-          step2Error = new Error('Conto destinazione non trovato');
-        } else {
-          destinationName = destAccount.name;
-          const { error } = await supabase
-            .from('savings_accounts')
-            .update({
-              balance: Math.round((Number(destAccount.balance) + amount) * 100) / 100,
-            })
-            .eq('id', destAccount.id)
-            .eq('user_id', userId);
-          step2Error = error;
-        }
-      }
-    } catch (err) {
-      step2Error = err;
-    }
+    // Step 2: Increase destination balance
+    const { error: step2Error } = await supabase
+      .from('savings_accounts')
+      .update({
+        balance: Math.round((Number(destAccount.balance) + amount) * 100) / 100,
+      })
+      .eq('id', destAccount.id)
+      .eq('user_id', userId);
 
     if (step2Error) {
       console.error('Error in transfer destination:', step2Error);
@@ -441,7 +332,7 @@ export function useSavingsAccounts({
       .insert({
         user_id: userId,
         from_account_id: sourceAccount.id,
-        to_account_id: transferDestination === 'unallocated' ? null : transferDestination,
+        to_account_id: destAccount.id,
         amount: Math.round(amount * 100) / 100,
       });
 
@@ -449,7 +340,7 @@ export function useSavingsAccounts({
       console.error('Error creating transfer record:', transferError);
     }
 
-    toast.success(`Trasferiti ${formatCurrency(amount)} da ${sourceAccount.name} a ${destinationName}`);
+    toast.success(`Trasferiti ${formatCurrency(amount)} da ${sourceAccount.name} a ${destAccount.name}`);
     setTransferringId(null);
     setTransferAmount('');
     setTransferDestination('');
@@ -477,10 +368,6 @@ export function useSavingsAccounts({
     editingBalanceValue, setEditingBalanceValue,
     handleEditBalance,
 
-    // Deposit form
-    depositingId, setDepositingId,
-    depositAmount, setDepositAmount,
-
     // Transfer form
     transferringId, setTransferringId,
     transferAmount, setTransferAmount,
@@ -491,7 +378,6 @@ export function useSavingsAccounts({
     handleEditName,
     handleDelete,
     handleSetPrimary,
-    handleDeposit,
     handleTransfer,
 
     // Utilities

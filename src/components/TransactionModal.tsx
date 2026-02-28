@@ -239,15 +239,99 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
         });
       };
 
-      // Edit mode: just update transaction fields, no balance change
+      // Edit mode: atomic balance adjustment + transaction update
       if (transaction) {
-        const { error } = await supabase
+        const isExpense = validated.type === 'expense';
+        const isIncome = validated.type === 'income';
+
+        // Account IDs: original (from existing transaction) and new (from chip selection)
+        const origAccountId: string | null = isExpense
+          ? (transaction.from_savings_account_id ?? null)
+          : (isIncome ? (transaction.to_savings_account_id ?? null) : null);
+        const newAccountId: string | null = isExpense
+          ? (selectedFromAccountId || null)
+          : (isIncome ? (selectedToAccountId || null) : null);
+
+        // Build balance map: only accounts that are involved
+        const originalBalances = new Map<string, number>();
+        for (const a of savingsAccounts) {
+          if (a.id === origAccountId || a.id === newAccountId) {
+            originalBalances.set(a.id, Number(a.balance));
+          }
+        }
+
+        // Compute target balances
+        const updatedBalances = new Map(originalBalances);
+
+        if (origAccountId && updatedBalances.has(origAccountId)) {
+          // Undo original effect on old account
+          const b = updatedBalances.get(origAccountId)!;
+          updatedBalances.set(origAccountId, isExpense
+            ? Math.round((b + transaction.amount) * 100) / 100  // expense: add back
+            : Math.round((b - transaction.amount) * 100) / 100  // income: subtract back
+          );
+        }
+
+        if (newAccountId && updatedBalances.has(newAccountId)) {
+          // Apply new effect on new account (using the already-updated map for same-account case)
+          const b = updatedBalances.get(newAccountId)!;
+          if (isExpense) {
+            if (b < amount) {
+              const acc = savingsAccounts.find(a => a.id === newAccountId);
+              toast.error(`Saldo insufficiente su ${acc?.name ?? 'conto'} (disponibile: ${formatCurrency(b)}, richiesti: ${formatCurrency(amount)})`);
+              setIsLoading(false);
+              return;
+            }
+            updatedBalances.set(newAccountId, Math.round((b - amount) * 100) / 100);
+          } else {
+            updatedBalances.set(newAccountId, Math.round((b + amount) * 100) / 100);
+          }
+        }
+
+        // Apply balance changes to DB (only accounts whose balance actually changed)
+        for (const [id, newBal] of updatedBalances) {
+          if (newBal === originalBalances.get(id)) continue;
+
+          const { error: balErr } = await supabase
+            .from('savings_accounts')
+            .update({ balance: newBal })
+            .eq('id', id)
+            .eq('user_id', user.id);
+
+          if (balErr) {
+            // Rollback all balance changes applied so far
+            for (const [rId, origBal] of originalBalances) {
+              await supabase.from('savings_accounts').update({ balance: origBal }).eq('id', rId).eq('user_id', user.id);
+            }
+            toast.error('Errore nella modifica del saldo. Modifiche annullate.');
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        // Update transaction record (incl. account links)
+        const updateData = {
+          ...transactionData,
+          from_savings_account_id: isExpense ? (selectedFromAccountId || null) : null,
+          to_savings_account_id: isIncome ? (selectedToAccountId || null) : null,
+        };
+
+        const { error: txError } = await supabase
           .from('transactions')
-          .update(transactionData)
+          .update(updateData)
           .eq('id', transaction.id)
           .eq('user_id', user.id);
 
-        if (error) throw error;
+        if (txError) {
+          // Rollback all balance changes
+          for (const [rId, origBal] of originalBalances) {
+            await supabase.from('savings_accounts').update({ balance: origBal }).eq('id', rId).eq('user_id', user.id);
+          }
+          toast.error('Errore nel salvataggio. Saldi ripristinati.');
+          setIsLoading(false);
+          return;
+        }
+
         toast.success('Transazione aggiornata con successo!');
         resetAndClose();
         return;
@@ -538,7 +622,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
           </div>
 
           {/* "Dal conto" chip selector for expense */}
-          {formData.type === 'expense' && !transaction && savingsAccounts.length > 0 && (
+          {formData.type === 'expense' && savingsAccounts.length > 0 && (
             <div>
               <p className="text-sm font-medium text-warmText-secondary mb-2">Dal conto</p>
               <div className="flex flex-wrap gap-2">
@@ -561,7 +645,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, transacti
           )}
 
           {/* "Al conto" chip selector for income */}
-          {formData.type === 'income' && !transaction && savingsAccounts.length > 0 && (
+          {formData.type === 'income' && savingsAccounts.length > 0 && (
             <div>
               <p className="text-sm font-medium text-warmText-secondary mb-2">Al conto</p>
               <div className="flex flex-wrap gap-2">

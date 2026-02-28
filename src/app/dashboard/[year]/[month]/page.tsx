@@ -80,28 +80,8 @@ export default function MonthlyDashboardPage() {
     }
   }, [user, loading, router]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-warmBg-primary flex items-center justify-center">
-        <p className="text-lg text-warmText-secondary">Caricamento...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
-
-  // Validate year and month
-  if (isNaN(year) || isNaN(month) || month < 1 || month > 12 || year < 2000 || year > 2100) {
-    return (
-      <div className="min-h-screen bg-warmBg-primary flex items-center justify-center">
-        <p className="text-lg text-warmData-expense">Data non valida</p>
-      </div>
-    );
-  }
-
   // Create date object for current month (using day 1)
+  // Computed before guard clauses so hooks below can reference it
   const currentDate = new Date(year, month - 1, 1);
   const monthName = format(currentDate, 'MMMM yyyy', { locale: it });
 
@@ -212,8 +192,6 @@ export default function MonthlyDashboardPage() {
     return { groups: g, totals: t };
   }, [transactions]);
 
-  const hasTransactions = transactions.length > 0;
-
   // Navigation functions
   const goToPreviousMonth = useCallback(() => {
     const prevMonth = subMonths(currentDate, 1);
@@ -297,6 +275,30 @@ export default function MonthlyDashboardPage() {
       document.removeEventListener('touchend', handlePullEnd);
     };
   }, [handlePullStart, handlePullMove, handlePullEnd]);
+
+  // — guard clauses: all hooks are declared above —
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-warmBg-primary flex items-center justify-center">
+        <p className="text-lg text-warmText-secondary">Caricamento...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  // Validate year and month
+  if (isNaN(year) || isNaN(month) || month < 1 || month > 12 || year < 2000 || year > 2100) {
+    return (
+      <div className="min-h-screen bg-warmBg-primary flex items-center justify-center">
+        <p className="text-lg text-warmData-expense">Data non valida</p>
+      </div>
+    );
+  }
+
+  const hasTransactions = transactions.length > 0;
 
   const handleEditTransaction = (transaction: Transaction) => {
     setEditingTransaction(transaction);

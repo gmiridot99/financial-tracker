@@ -33,9 +33,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
+      if (event === 'SIGNED_OUT') {
+        router.push('/login');
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -62,7 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
-    router.push('/login');
+    // redirect is handled by onAuthStateChange SIGNED_OUT event
   };
 
   const value = {

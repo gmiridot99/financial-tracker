@@ -2,10 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser } from '@/lib/api-auth';
 
-function createSupabaseServer() {
+/** Creates a user-scoped Supabase client using the anon key + user JWT.
+ *  Works with RLS (asset_price_history allows SELECT to authenticated users). */
+function createSupabaseForUser(accessToken: string) {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    }
   );
 }
 
@@ -14,6 +21,9 @@ export async function GET(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  const authHeader = request.headers.get('Authorization')!;
+  const accessToken = authHeader.replace('Bearer ', '');
 
   const symbol = request.nextUrl.searchParams.get('symbol');
   const daysParam = request.nextUrl.searchParams.get('days');
@@ -28,7 +38,7 @@ export async function GET(request: NextRequest) {
   // Default to 90 days, cap at 365
   const days = Math.min(Math.max(parseInt(daysParam ?? '90', 10) || 90, 1), 365);
 
-  const supabaseServer = createSupabaseServer();
+  const supabaseServer = createSupabaseForUser(accessToken);
 
   // Calculate the start date
   const startDate = new Date();

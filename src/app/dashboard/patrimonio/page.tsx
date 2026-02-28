@@ -391,12 +391,11 @@ export default function PatrimonioPage() {
               {/* LEFT COLUMN continued: accounts list */}
               <div className="lg:col-span-3 space-y-2">
                 <div className={activeTab === 'risparmi' ? '' : 'hidden'}>
-                  <SavingsAccountsList userId={user.id} savingsUnallocated={0} onAccountsChanged={loadAccountTotals} />
+                  <SavingsAccountsList userId={user.id} onAccountsChanged={loadAccountTotals} />
                 </div>
                 <div className={activeTab === 'investimenti' ? '' : 'hidden'}>
                   <InvestmentAccountsList
                     userId={user.id}
-                    investmentsUnallocated={0}
                     onAccountsChanged={loadAccountTotals}
                     onTotalMarketValue={handleMarketValueUpdate}
                     onPricesLoadingChange={setPricesLoading}

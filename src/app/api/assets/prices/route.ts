@@ -11,10 +11,11 @@ interface PriceResult {
   currency: string;
 }
 
-function createSupabaseServer() {
+function createSupabaseForUser(accessToken: string) {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { global: { headers: { Authorization: `Bearer ${accessToken}` } } }
   );
 }
 
@@ -23,6 +24,8 @@ export async function GET(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  const accessToken = (request.headers.get('Authorization') ?? '').replace('Bearer ', '');
 
   const { searchParams } = new URL(request.url);
   const symbolsParam = searchParams.get('symbols');
@@ -53,7 +56,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const supabaseServer = createSupabaseServer();
+  const supabaseServer = createSupabaseForUser(accessToken);
   const prices: Record<string, PriceResult> = {};
   const symbolsToFetch: string[] = [];
   const now = new Date();
