@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, ChevronDown } from 'lucide-react';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
@@ -228,7 +228,7 @@ export default function InlineSavingsForm({ onSuccess, defaultDate }: InlineSavi
               setAmount(e.target.value);
               setError('');
             }}
-            className="h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmData-savings placeholder:text-warmText-disabled"
+            className="h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmData-savings placeholder:text-warmText-disabled"
           />
 
           <input
@@ -237,7 +237,7 @@ export default function InlineSavingsForm({ onSuccess, defaultDate }: InlineSavi
             placeholder="Fondo vacanze, ecc."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmData-savings placeholder:text-warmText-disabled"
+            className="h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmData-savings placeholder:text-warmText-disabled"
           />
         </div>
 
@@ -258,19 +258,22 @@ export default function InlineSavingsForm({ onSuccess, defaultDate }: InlineSavi
               </Link>
             </div>
           ) : (
-            <select
-              value={selectedSavingsAccountId}
-              onChange={(e) => {
-                setSelectedSavingsAccountId(e.target.value);
-                setError('');
-              }}
-              className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmData-savings appearance-none"
-            >
-              <option value="">Seleziona conto...</option>
-              {savingsAccounts.map(acc => (
-                <option key={acc.id} value={acc.id}>{acc.name}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                value={selectedSavingsAccountId}
+                onChange={(e) => {
+                  setSelectedSavingsAccountId(e.target.value);
+                  setError('');
+                }}
+                className="w-full h-11 px-3 pr-9 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmData-savings appearance-none"
+              >
+                <option value="">Seleziona conto...</option>
+                {savingsAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>{acc.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-warmText-tertiary pointer-events-none" />
+            </div>
           )}
         </div>
 
@@ -308,7 +311,7 @@ export default function InlineSavingsForm({ onSuccess, defaultDate }: InlineSavi
             <select
               value={frequency}
               onChange={(e) => setFrequency(e.target.value as 'monthly' | 'annual')}
-              className="h-9 px-3 bg-warmBg-primary rounded-lg border border-warmText-muted text-warmText-primary text-xs focus:outline-none focus:border-warmData-savings"
+              className="h-9 px-3 bg-warmBg-primary rounded-lg border border-warmText-muted text-warmText-primary text-base md:text-xs focus:outline-none focus:border-warmData-savings"
             >
               <option value="monthly">Ogni mese</option>
               <option value="annual">Ogni anno</option>

@@ -76,21 +76,21 @@ export default function EventsList({
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-purple-600" />
+        <h3 className="font-semibold text-warmText-primary flex items-center gap-2">
+          <Calendar className="w-5 h-5 text-warmData-investment" />
           Eventi
         </h3>
         <div className="flex gap-2">
           <button
             onClick={() => handleStartAdd('purchase')}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-warmAccent-primary hover:bg-warmAccent-hover text-white rounded-lg text-sm font-medium transition-colors"
           >
             <Home className="w-4 h-4" />
             Acquisto
           </button>
           <button
             onClick={() => handleStartAdd('sale')}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-warmData-income/20 hover:bg-warmData-income/30 text-warmData-income rounded-lg text-sm font-medium transition-colors"
           >
             <DollarSign className="w-4 h-4" />
             Vendita
@@ -99,23 +99,23 @@ export default function EventsList({
       </div>
 
       {sortedEvents.length === 0 ? (
-        <div className="p-8 text-center bg-slate-50 rounded-lg border-2 border-dashed border-slate-300">
-          <Calendar className="w-12 h-12 text-slate-400 mx-auto mb-3" />
-          <p className="text-slate-600 mb-2">Nessun evento definito</p>
-          <p className="text-sm text-slate-500 mb-4">
+        <div className="p-8 text-center bg-warmBg-secondary rounded-2xl border-2 border-dashed border-warmText-muted/30">
+          <Calendar className="w-12 h-12 text-warmText-tertiary mx-auto mb-3" />
+          <p className="text-warmText-secondary mb-2">Nessun evento definito</p>
+          <p className="text-sm text-warmText-tertiary mb-4">
             Aggiungi eventi per simulare acquisti (casa, auto) e vendite
           </p>
           <div className="flex gap-2 justify-center">
             <button
               onClick={() => handleStartAdd('purchase')}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-warmAccent-primary hover:bg-warmAccent-hover text-white rounded-lg text-sm font-medium transition-colors"
             >
               <Home className="w-4 h-4" />
               Nuovo Acquisto
             </button>
             <button
               onClick={() => handleStartAdd('sale')}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-warmData-income/20 hover:bg-warmData-income/30 text-warmData-income rounded-lg text-sm font-medium transition-colors"
             >
               <DollarSign className="w-4 h-4" />
               Nuova Vendita
@@ -131,20 +131,20 @@ export default function EventsList({
               return (
                 <div
                   key={index}
-                  className="p-5 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200 hover:border-blue-400 transition-colors"
+                  className="p-5 bg-warmBg-secondary rounded-2xl border border-warmAccent-primary/30 hover:border-warmAccent-primary/60 transition-colors"
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       {/* Header */}
                       <div className="flex items-center gap-3 mb-3">
-                        <div className="p-2 bg-blue-600 rounded-lg">
-                          <Home className="w-5 h-5 text-white" />
+                        <div className="p-2 bg-warmAccent-primary/20 rounded-xl">
+                          <Home className="w-5 h-5 text-warmAccent-primary" />
                         </div>
                         <div>
-                          <div className="font-semibold text-blue-900">
+                          <div className="font-semibold text-warmText-primary">
                             Acquisto: {event.assetName}
                           </div>
-                          <div className="text-sm text-blue-700">
+                          <div className="text-sm text-warmText-tertiary">
                             Anno {event.year}
                           </div>
                         </div>
@@ -153,20 +153,20 @@ export default function EventsList({
                       {/* Details */}
                       <div className="grid md:grid-cols-3 gap-3 text-sm">
                         <div>
-                          <div className="text-blue-700">Prezzo</div>
-                          <div className="font-semibold text-blue-900">
+                          <div className="text-warmText-tertiary">Prezzo</div>
+                          <div className="font-semibold text-warmText-primary">
                             €{event.purchasePrice?.toLocaleString()}
                           </div>
                         </div>
                         <div>
-                          <div className="text-blue-700">Anticipo</div>
-                          <div className="font-semibold text-blue-900">
+                          <div className="text-warmText-tertiary">Anticipo</div>
+                          <div className="font-semibold text-warmText-primary">
                             €{event.downPayment?.toLocaleString()}
                           </div>
                         </div>
                         <div>
-                          <div className="text-blue-700">Debito</div>
-                          <div className="font-semibold text-blue-900">
+                          <div className="text-warmText-tertiary">Debito</div>
+                          <div className="font-semibold text-warmText-primary">
                             €{event.debtAmount?.toLocaleString()} (
                             {event.debtDuration} anni @ {event.debtInterestRate}
                             %)
@@ -175,8 +175,8 @@ export default function EventsList({
                       </div>
 
                       <div className="mt-2 text-sm">
-                        <span className="text-blue-700">Rivalutazione: </span>
-                        <span className="font-semibold text-blue-900">
+                        <span className="text-warmText-tertiary">Rivalutazione: </span>
+                        <span className="font-semibold text-warmText-primary">
                           {event.assetAppreciationRate}% annuo
                         </span>
                       </div>
@@ -186,14 +186,14 @@ export default function EventsList({
                     <div className="flex gap-2 ml-4">
                       <button
                         onClick={() => handleStartEdit(originalIndex)}
-                        className="p-2 text-blue-700 hover:text-blue-900 hover:bg-blue-200 rounded-lg transition-colors"
+                        className="p-2 text-warmText-tertiary hover:text-warmText-primary hover:bg-warmBg-tertiary rounded-lg transition-colors"
                         title="Modifica"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDelete(originalIndex)}
-                        className="p-2 text-blue-700 hover:text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                        className="p-2 text-warmText-tertiary hover:text-warmData-expense hover:bg-warmData-expense/10 rounded-lg transition-colors"
                         title="Elimina"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -207,20 +207,20 @@ export default function EventsList({
               return (
                 <div
                   key={index}
-                  className="p-5 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border border-green-200 hover:border-green-400 transition-colors"
+                  className="p-5 bg-warmBg-secondary rounded-2xl border border-warmData-income/30 hover:border-warmData-income/60 transition-colors"
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       {/* Header */}
                       <div className="flex items-center gap-3 mb-3">
-                        <div className="p-2 bg-green-600 rounded-lg">
-                          <DollarSign className="w-5 h-5 text-white" />
+                        <div className="p-2 bg-warmData-income/20 rounded-xl">
+                          <DollarSign className="w-5 h-5 text-warmData-income" />
                         </div>
                         <div>
-                          <div className="font-semibold text-green-900">
+                          <div className="font-semibold text-warmText-primary">
                             Vendita Asset
                           </div>
-                          <div className="text-sm text-green-700">
+                          <div className="text-sm text-warmText-tertiary">
                             Anno {event.year}
                           </div>
                         </div>
@@ -229,10 +229,10 @@ export default function EventsList({
                       {/* Details */}
                       <div className="text-sm space-y-2">
                         <div>
-                          <span className="text-green-700">
+                          <span className="text-warmText-tertiary">
                             Riallocazione surplus:{' '}
                           </span>
-                          <span className="font-semibold text-green-900">
+                          <span className="font-semibold text-warmText-primary">
                             {event.surplusAllocation?.investmentsPercent}% Inv /{' '}
                             {event.surplusAllocation?.savingsPercent}% Sav
                           </span>
@@ -244,14 +244,14 @@ export default function EventsList({
                     <div className="flex gap-2 ml-4">
                       <button
                         onClick={() => handleStartEdit(originalIndex)}
-                        className="p-2 text-green-700 hover:text-green-900 hover:bg-green-200 rounded-lg transition-colors"
+                        className="p-2 text-warmText-tertiary hover:text-warmText-primary hover:bg-warmBg-tertiary rounded-lg transition-colors"
                         title="Modifica"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDelete(originalIndex)}
-                        className="p-2 text-green-700 hover:text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                        className="p-2 text-warmText-tertiary hover:text-warmData-expense hover:bg-warmData-expense/10 rounded-lg transition-colors"
                         title="Elimina"
                       >
                         <Trash2 className="w-4 h-4" />

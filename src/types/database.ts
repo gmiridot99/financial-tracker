@@ -39,6 +39,7 @@ export interface Transaction {
   trigger_pac: boolean;
   from_savings_account_id?: string | null;
   to_savings_account_id?: string | null;
+  status: 'pending' | 'active' | null;
 }
 
 export interface Transfer {
@@ -54,6 +55,7 @@ export interface Transfer {
   to_savings_account_id?: string | null;
   to_investment_account_id?: string | null;
   created_at: string;
+  status: 'pending' | 'active' | null;
 }
 
 export interface InvestmentCategory {

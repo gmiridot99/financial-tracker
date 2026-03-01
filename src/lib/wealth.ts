@@ -233,25 +233,27 @@ export async function calculateWealthForYears(
     }
     const transEndDate = `${maxYear}-12-31`;
 
-    // Query 3: Fetch ALL transactions for the entire range
+    // Query 3: Fetch ALL transactions for the entire range (exclude pending)
     const { data: rawTransactions, error: transError } = await supabase
       .from('transactions')
       .select('amount, type, start_date, categories!inner(name)')
       .eq('user_id', userId)
       .gte('start_date', transStartDate)
-      .lte('start_date', transEndDate);
+      .lte('start_date', transEndDate)
+      .or('status.is.null,status.eq.active');
 
     if (transError) {
       console.error('Error fetching transactions:', transError);
     }
 
-    // Query 4: Fetch ALL transfers for the entire range
+    // Query 4: Fetch ALL transfers for the entire range (exclude pending)
     const { data: rawTransfers, error: transferError } = await supabase
       .from('transfers')
       .select('amount, date, to_savings_account_id, to_investment_account_id')
       .eq('user_id', userId)
       .gte('date', transStartDate)
-      .lte('date', transEndDate);
+      .lte('date', transEndDate)
+      .or('status.is.null,status.eq.active');
 
     if (transferError) {
       console.error('Error fetching transfers:', transferError);

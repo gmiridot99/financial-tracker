@@ -30,13 +30,6 @@ interface SavingsPerformanceChartProps {
 // Dynamic key: `a0`, `a1`, … keyed by account index
 type ChartDataPoint = Record<string, number | string>;
 
-interface Transfer {
-  from_account_id: string | null;
-  to_account_id: string | null;
-  amount: number;
-  created_at: string;
-}
-
 // ── Constants ────────────────────────────────────────────────────────
 
 // Same palette as investment chart for visual consistency
@@ -118,118 +111,185 @@ export default function SavingsPerformanceChart({
     async function fetchData() {
       setLoading(true);
 
-      // ── Per-account reconstruction (from transfers) ───────────────
-      if (accounts.length > 0) {
-        const { data: transfers, error } = await supabase
-          .from('savings_transfers')
-          .select('from_account_id, to_account_id, amount, created_at')
+      // ── Fallback: aggregate from wealth_snapshots ─────────────────
+      if (accounts.length === 0) {
+        const { data, error } = await supabase
+          .from('wealth_snapshots')
+          .select('year, month, savings_balance')
           .eq('user_id', userId)
-          .order('created_at', { ascending: false }); // DESC for backward walk
+          .order('year', { ascending: true })
+          .order('month', { ascending: true });
 
-        if (error) {
-          console.error('Error loading transfers:', error);
+        if (error || !data || data.length === 0) {
           setChartData([]);
           setLoading(false);
           return;
         }
 
-        const txns = (transfers ?? []) as Transfer[];
+        const points = data.map((s) => ({
+          label: `${MONTH_ABBREVIATIONS[s.month - 1]} ${s.year}`,
+          a0: s.savings_balance,
+        }));
+        points.push({ label: 'Oggi', a0: currentTotal });
 
-        // Reconstruct per-account balance history by walking backwards from current balance.
-        // For each transfer (in reverse date order) we undo its effect to get the balance
-        // as it was BEFORE that transfer.
-        // This is exact as long as all balance changes go through savings_transfers.
-        // Manual direct-edit adjustments create a discontinuity, but the "today" point
-        // always uses the actual current balance so the chart is always accurate at Oggi.
+        setChartData(points);
+        setLoading(false);
+        return;
+      }
 
-        const allYearMonths = new Set<string>();
-        const perAccountTimeline = new Map<string, Map<string, number>>();
+      // ── Per-account reconstruction ────────────────────────────────
+      //
+      // We reconstruct per-account balance history by walking BACKWARDS from
+      // the current balance, undoing each recorded event.
+      //
+      // Data sources (all balance-affecting events):
+      //   1. transactions.savings_account_id  — old savings deposits (InlineSavingsForm)
+      //   2. transactions.to_savings_account_id — income credited to this account
+      //   3. transactions.from_savings_account_id — expenses debited from this account
+      //   4. transfers (new table) — savings→savings or savings→investment transfers
+      //   5. savings_transfers (old table) — legacy account-to-account transfers
+      //
+      // For each account we compute the NET delta per calendar month, then walk
+      // backward from the current real balance to get the end-of-month balance
+      // for each month. The "Oggi" point always uses the actual current balance.
 
-        for (const account of accounts) {
-          let balance = account.balance; // start from current balance (today)
-          const timeline = new Map<string, number>();
+      const [txResult, tfResult, stResult] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('type, amount, start_date, savings_account_id, to_savings_account_id, from_savings_account_id')
+          .eq('user_id', userId),
 
-          for (const tx of txns) {
-            const ym = toYearMonth(tx.created_at);
+        supabase
+          .from('transfers')
+          .select('from_savings_account_id, to_savings_account_id, amount, date')
+          .eq('user_id', userId),
 
-            if (tx.to_account_id === account.id) {
-              // Undo a deposit/receive: account had less before this transfer
-              balance -= tx.amount;
-            } else if (tx.from_account_id === account.id) {
-              // Undo a withdrawal/send: account had more before this transfer
-              balance += tx.amount;
-            } else {
-              continue;
-            }
+        supabase
+          .from('savings_transfers')
+          .select('from_account_id, to_account_id, amount, created_at')
+          .eq('user_id', userId),
+      ]);
 
-            allYearMonths.add(ym);
-            // Going backwards: last write per month = oldest balance for that month
-            timeline.set(ym, Math.round(balance * 100) / 100);
+      if (txResult.error) console.error('Error loading transactions for savings chart:', txResult.error);
+      if (tfResult.error) console.error('Error loading transfers for savings chart:', tfResult.error);
+      if (stResult.error) console.error('Error loading savings_transfers for savings chart:', stResult.error);
+
+      const transactions = txResult.data ?? [];
+      const transfers = tfResult.data ?? [];
+      const savingsTransfers = stResult.data ?? [];
+
+      const allYearMonths = new Set<string>();
+      // Map<accountId, Map<"YYYY-MM", endOfMonthBalance>>
+      const perAccountTimeline = new Map<string, Map<string, number>>();
+
+      for (const account of accounts) {
+        // Accumulate net monthly delta for this account
+        const monthDeltas = new Map<string, number>();
+
+        const addDelta = (ym: string, delta: number) => {
+          monthDeltas.set(ym, (monthDeltas.get(ym) ?? 0) + delta);
+          allYearMonths.add(ym);
+        };
+
+        // 1. Transactions: old savings deposits (savings_account_id)
+        //    These are type=expense that credited the savings account
+        for (const tx of transactions) {
+          if (tx.savings_account_id === account.id && tx.type === 'expense') {
+            addDelta(toYearMonth(tx.start_date), Number(tx.amount));
           }
-
-          perAccountTimeline.set(account.id, timeline);
         }
 
-        // Sort year-months chronologically
-        const sortedYms = [...allYearMonths].sort();
-
-        // Build chart data with forward-fill per account
-        const lastKnown = new Map<string, number>();
-        const points: ChartDataPoint[] = [];
-
-        for (const ym of sortedYms) {
-          const point: ChartDataPoint = { label: monthLabel(ym) };
-
-          for (let i = 0; i < accounts.length; i++) {
-            const acc = accounts[i];
-            const timeline = perAccountTimeline.get(acc.id);
-            if (timeline?.has(ym)) {
-              lastKnown.set(acc.id, timeline.get(ym)!);
-            }
-            point[`a${i}`] = lastKnown.get(acc.id) ?? 0;
+        // 2. Transactions: income credited to this account (to_savings_account_id)
+        for (const tx of transactions) {
+          if (tx.to_savings_account_id === account.id) {
+            addDelta(toYearMonth(tx.start_date), Number(tx.amount));
           }
-
-          points.push(point);
         }
 
-        // "Oggi" with actual current balances
-        const oggiPoint: ChartDataPoint = { label: 'Oggi' };
+        // 3. Transactions: expenses debited from this account (from_savings_account_id)
+        for (const tx of transactions) {
+          if (tx.from_savings_account_id === account.id) {
+            addDelta(toYearMonth(tx.start_date), -Number(tx.amount));
+          }
+        }
+
+        // 4. New transfers table (savings→savings or savings→investment)
+        for (const tf of transfers) {
+          if (tf.to_savings_account_id === account.id) {
+            addDelta(toYearMonth(tf.date), Number(tf.amount));
+          }
+          if (tf.from_savings_account_id === account.id) {
+            addDelta(toYearMonth(tf.date), -Number(tf.amount));
+          }
+        }
+
+        // 5. Legacy savings_transfers table
+        for (const st of savingsTransfers) {
+          if (st.to_account_id === account.id) {
+            addDelta(toYearMonth(st.created_at), Number(st.amount));
+          }
+          if (st.from_account_id === account.id) {
+            addDelta(toYearMonth(st.created_at), -Number(st.amount));
+          }
+        }
+
+        if (monthDeltas.size === 0) {
+          // No events recorded for this account — skip (shows only in "Oggi")
+          perAccountTimeline.set(account.id, new Map());
+          continue;
+        }
+
+        // Walk backward from current balance to compute end-of-month balances.
+        // endOfMonth[M] = balance at end of month M (after all M's events).
+        // We set endOfMonth[M] = running_balance BEFORE subtracting delta[M].
+        const sortedAccountMonths = [...monthDeltas.keys()].sort();
+        const endOfMonthBalances = new Map<string, number>();
+        let balance = account.balance; // current real balance
+
+        for (let i = sortedAccountMonths.length - 1; i >= 0; i--) {
+          const ym = sortedAccountMonths[i];
+          endOfMonthBalances.set(ym, Math.round(balance * 100) / 100);
+          balance -= monthDeltas.get(ym)!; // undo this month
+        }
+
+        perAccountTimeline.set(account.id, endOfMonthBalances);
+      }
+
+      // Sort all year-months chronologically
+      const sortedYms = [...allYearMonths].sort();
+
+      // Build chart data with forward-fill per account
+      const lastKnown = new Map<string, number>();
+      const points: ChartDataPoint[] = [];
+
+      for (const ym of sortedYms) {
+        const point: ChartDataPoint = { label: monthLabel(ym) };
+
         for (let i = 0; i < accounts.length; i++) {
-          oggiPoint[`a${i}`] = Math.round(accounts[i].balance * 100) / 100;
+          const acc = accounts[i];
+          const timeline = perAccountTimeline.get(acc.id);
+          if (timeline?.has(ym)) {
+            lastKnown.set(acc.id, timeline.get(ym)!);
+          }
+          point[`a${i}`] = lastKnown.get(acc.id) ?? 0;
         }
-        points.push(oggiPoint);
 
-        // Trim leading all-zero rows
-        const firstNonZeroIdx = points.findIndex(p =>
-          accounts.some((_, i) => (p[`a${i}`] as number) > 0)
-        );
-
-        setChartData(firstNonZeroIdx >= 0 ? points.slice(firstNonZeroIdx) : points);
-        setLoading(false);
-        return;
+        points.push(point);
       }
 
-      // ── Fallback: aggregate from wealth_snapshots ─────────────────
-      const { data, error } = await supabase
-        .from('wealth_snapshots')
-        .select('year, month, savings_balance')
-        .eq('user_id', userId)
-        .order('year', { ascending: true })
-        .order('month', { ascending: true });
-
-      if (error || !data || data.length === 0) {
-        setChartData([]);
-        setLoading(false);
-        return;
+      // "Oggi" always uses actual current balances
+      const oggiPoint: ChartDataPoint = { label: 'Oggi' };
+      for (let i = 0; i < accounts.length; i++) {
+        oggiPoint[`a${i}`] = Math.round(accounts[i].balance * 100) / 100;
       }
+      points.push(oggiPoint);
 
-      const points = data.map((s) => ({
-        label: `${MONTH_ABBREVIATIONS[s.month - 1]} ${s.year}`,
-        a0: s.savings_balance,
-      }));
-      points.push({ label: 'Oggi', a0: currentTotal });
+      // Trim leading all-zero rows
+      const firstNonZeroIdx = points.findIndex(p =>
+        accounts.some((_, i) => (p[`a${i}`] as number) > 0)
+      );
 
-      setChartData(points);
+      setChartData(firstNonZeroIdx >= 0 ? points.slice(firstNonZeroIdx) : points);
       setLoading(false);
     }
 

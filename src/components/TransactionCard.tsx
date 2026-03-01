@@ -12,6 +12,7 @@ interface Transaction {
   start_date: string;
   description: string | null;
   frequency: 'monthly' | 'annual' | 'one-time';
+  status?: 'pending' | 'active' | null;
 }
 
 interface TransactionCardProps {
@@ -33,6 +34,7 @@ export default function TransactionCard({
   const dateObj = new Date(transaction.start_date);
   const formattedDate = format(dateObj, 'dd MMM', { locale: it });
   const isIncome = transaction.type === 'income';
+  const isPending = transaction.status === 'pending';
 
   const handleClick = () => {
     if (selectionMode && onToggleSelect) {
@@ -45,8 +47,13 @@ export default function TransactionCard({
   return (
     <div
       onClick={handleClick}
-      className={`relative bg-transparent border-b border-warmBg-tertiary py-3.5 px-4 hover:bg-warmBg-hover transition-all cursor-pointer
-        ${transaction.is_recurring ? 'border-l-[3px] border-l-warmData-recurring pl-3' : ''}
+      className={`relative bg-transparent border-b py-3.5 px-4 hover:bg-warmBg-hover transition-all cursor-pointer
+        ${isPending
+          ? 'opacity-60 border-b-warmBg-tertiary border-l-[3px] border-l-warmText-tertiary pl-3'
+          : transaction.is_recurring
+            ? 'border-b-warmBg-tertiary border-l-[3px] border-l-warmData-recurring pl-3'
+            : 'border-b-warmBg-tertiary'
+        }
         ${isSelected ? 'bg-warmBg-hover' : ''}`}
     >
       <div className="flex items-center gap-3">
@@ -60,7 +67,7 @@ export default function TransactionCard({
           />
         )}
 
-        {/* Existing card content */}
+        {/* Card content */}
         <div className="flex justify-between items-start flex-1">
           <div className="flex-1">
             <h4 className="font-medium text-warmText-primary text-sm mb-1">
@@ -68,13 +75,17 @@ export default function TransactionCard({
             </h4>
             <p className="text-xs text-warmText-disabled">
               {transaction.category_name || transaction.category} · {formattedDate}
-              {transaction.is_recurring && ' · Ricorrente'}
+              {isPending ? ` · In attesa · ${formattedDate}` : transaction.is_recurring ? ' · Ricorrente' : ''}
             </p>
           </div>
           <div className="text-right ml-4">
             <p
               className={`text-sm font-semibold ${
-                isIncome ? 'text-warmData-income' : 'text-warmData-expense'
+                isPending
+                  ? 'text-warmText-tertiary'
+                  : isIncome
+                    ? 'text-warmData-income'
+                    : 'text-warmData-expense'
               }`}
             >
               {isIncome ? '+' : '-'}€{transaction.amount.toFixed(2)}

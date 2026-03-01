@@ -309,10 +309,10 @@ export default function PatrimonioPage() {
                                 : 0;
                               return (
                                 <>
-                                  <p className={`text-lg font-bold ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  <p className={`text-lg font-bold ${pnl >= 0 ? 'text-warmData-income' : 'text-red-400'}`}>
                                     {pnl >= 0 ? '+' : ''}{formatCurrency(pnl)}
                                   </p>
-                                  <p className={`text-xs font-semibold ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  <p className={`text-xs font-semibold ${pnl >= 0 ? 'text-warmData-income' : 'text-red-400'}`}>
                                     {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
                                   </p>
                                 </>

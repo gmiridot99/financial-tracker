@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, ChevronDown } from 'lucide-react';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
@@ -229,19 +229,22 @@ export default function InvestmentForm({ onSuccess, defaultDate }: InvestmentFor
               </Link>
             </div>
           ) : (
-            <select
-              value={selectedInvestmentAccountId}
-              onChange={(e) => {
-                setSelectedInvestmentAccountId(e.target.value);
-                setError('');
-              }}
-              className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmData-investment appearance-none"
-            >
-              <option value="">Seleziona conto...</option>
-              {investmentAccounts.map(acc => (
-                <option key={acc.id} value={acc.id}>{acc.name}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                value={selectedInvestmentAccountId}
+                onChange={(e) => {
+                  setSelectedInvestmentAccountId(e.target.value);
+                  setError('');
+                }}
+                className="w-full h-11 px-3 pr-9 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmData-investment appearance-none"
+              >
+                <option value="">Seleziona conto...</option>
+                {investmentAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>{acc.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-warmText-tertiary pointer-events-none" />
+            </div>
           )}
         </div>
 

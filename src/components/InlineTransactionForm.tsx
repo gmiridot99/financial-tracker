@@ -51,7 +51,7 @@ interface SavingsAccount {
 }
 
 interface InlineTransactionFormProps {
-  onSuccess: () => void;
+  onSuccess: (savedDate: string) => void;
   defaultDate?: string;
 }
 
@@ -184,6 +184,7 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
       }
 
       // Step 2: Insert transaction with from_savings_account_id
+      // Manually created transactions are immediately active — only auto-imported recurring ones are 'pending'
       const { error: txError } = await supabase
         .from('transactions')
         .insert({
@@ -197,6 +198,7 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
           start_date: validated.date,
           description: validated.description || null,
           from_savings_account_id: selectedAccountId,
+          status: 'active',
         });
 
       if (txError) {
@@ -217,7 +219,7 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
       }
 
       toast.success('Spesa aggiunta!');
-      onSuccess();
+      onSuccess(validated.date);
 
       // Reset form
       setFormData({
@@ -279,14 +281,14 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
             placeholder="12,50"
             value={formData.amount}
             onChange={handleChange}
-            className="col-span-1 h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary placeholder:text-warmText-disabled"
+            className="col-span-1 h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmAccent-primary placeholder:text-warmText-disabled"
           />
 
           <select
             name="category"
             value={formData.category}
             onChange={handleChange}
-            className="col-span-1 h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary"
+            className="col-span-1 h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmAccent-primary"
           >
             <option value="">Categoria</option>
             {categories.map((cat) => (
@@ -327,7 +329,7 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
           placeholder="Descrizione (opzionale)"
           value={formData.description}
           onChange={handleChange}
-          className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary placeholder:text-warmText-disabled"
+          className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmAccent-primary placeholder:text-warmText-disabled"
         />
 
         {/* Date */}
@@ -336,7 +338,7 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
           type="date"
           value={formData.date}
           onChange={handleChange}
-          className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary"
+          className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmAccent-primary"
         />
 
         {/* Recurring Options */}
@@ -368,7 +370,7 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
               name="frequency"
               value={formData.frequency}
               onChange={handleChange}
-              className="h-9 px-3 bg-warmBg-primary rounded-lg border border-warmText-muted text-warmText-primary text-xs focus:outline-none focus:border-warmAccent-primary"
+              className="h-9 px-3 bg-warmBg-primary rounded-lg border border-warmText-muted text-warmText-primary text-base md:text-xs focus:outline-none focus:border-warmAccent-primary"
             >
               <option value="monthly">Ogni mese</option>
               <option value="annual">Ogni anno</option>
@@ -378,7 +380,7 @@ export default function InlineTransactionForm({ onSuccess, defaultDate }: Inline
 
         {/* Errors */}
         {Object.values(errors).filter(Boolean).length > 0 && (
-          <div className="text-xs text-red-400">
+          <div className="text-xs text-warmData-expense">
             {Object.values(errors).filter(Boolean).join(', ')}
           </div>
         )}

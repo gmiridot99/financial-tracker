@@ -824,6 +824,17 @@ export default function InvestmentAccountsList({
         );
       })}
 
+      {/* Empty state */}
+      {inv.accounts.length === 0 && !inv.showCreateForm && (
+        <div className="py-10 flex flex-col items-center text-center gap-3">
+          <div className="p-4 bg-warmData-investment/10 rounded-2xl">
+            <TrendingUp className="w-8 h-8 text-warmData-investment" />
+          </div>
+          <p className="text-warmText-secondary font-medium">Nessun conto investimento</p>
+          <p className="text-sm text-warmText-tertiary">Crea il primo conto per iniziare a tracciare il tuo portafoglio</p>
+        </div>
+      )}
+
       {/* Create Account Form */}
       {inv.showCreateForm ? (
         <div className="bg-warmBg-secondary rounded-2xl p-4 animate-cardEnter">

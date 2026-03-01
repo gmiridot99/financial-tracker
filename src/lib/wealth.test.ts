@@ -61,28 +61,32 @@ function buildYearsMock(
     }),
   };
 
-  // Query 3: transactions - select().eq().gte().lte()
+  // Query 3: transactions - select().eq().gte().lte().or()
   const query3 = {
     select: vi.fn().mockReturnValue({
       eq: vi.fn().mockReturnValue({
         gte: vi.fn().mockReturnValue({
-          lte: vi.fn().mockResolvedValue({
-            data: transactions,
-            error: null,
+          lte: vi.fn().mockReturnValue({
+            or: vi.fn().mockResolvedValue({
+              data: transactions,
+              error: null,
+            }),
           }),
         }),
       }),
     }),
   };
 
-  // Query 4: transfers - select().eq().gte().lte()
+  // Query 4: transfers - select().eq().gte().lte().or()
   const query4 = {
     select: vi.fn().mockReturnValue({
       eq: vi.fn().mockReturnValue({
         gte: vi.fn().mockReturnValue({
-          lte: vi.fn().mockResolvedValue({
-            data: transfers,
-            error: null,
+          lte: vi.fn().mockReturnValue({
+            or: vi.fn().mockResolvedValue({
+              data: transfers,
+              error: null,
+            }),
           }),
         }),
       }),

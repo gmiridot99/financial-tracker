@@ -18,7 +18,7 @@ import BulkDeleteActionBar from '@/components/BulkDeleteActionBar';
 import TransactionGroup from '@/components/TransactionGroup';
 import { supabase } from '@/lib/supabase';
 import { useTransfers } from '@/hooks/useTransfers';
-import { copyRecurringFromPreviousMonth } from '@/lib/recurring';
+import { copyRecurringFromPreviousMonth, activatePendingRecurring } from '@/lib/recurring';
 import { getValidDateForMonth } from '@/lib/dateUtils';
 import toast from 'react-hot-toast';
 
@@ -37,6 +37,7 @@ interface Transaction {
   savings_account_id?: string | null;
   from_savings_account_id?: string | null;
   to_savings_account_id?: string | null;
+  status?: 'pending' | 'active' | null;
 }
 
 export default function MonthlyDashboardPage() {
@@ -113,11 +114,12 @@ export default function MonthlyDashboardPage() {
           savings_account_id,
           from_savings_account_id,
           to_savings_account_id,
+          status,
           categories (name)
         `)
         .eq('user_id', user.id)
-        .gte('start_date', monthStart.toISOString().split('T')[0])
-        .lte('start_date', monthEnd.toISOString().split('T')[0])
+        .gte('start_date', format(monthStart, 'yyyy-MM-dd'))
+        .lte('start_date', format(monthEnd, 'yyyy-MM-dd'))
         .order('start_date', { ascending: true });
 
       if (error) throw error;
@@ -150,6 +152,26 @@ export default function MonthlyDashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, year, month]);
 
+  // Activate pending recurring items for the current month only
+  useEffect(() => {
+    if (!user || isNaN(year) || isNaN(month)) return;
+    const now = new Date();
+    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+    if (!isCurrentMonth) return;
+
+    activatePendingRecurring(user.id)
+      .then(({ transactionsActivated, transfersActivated }) => {
+        const total = transactionsActivated + transfersActivated;
+        if (total > 0) {
+          toast.success(`Attivate ${total} ricorrenti`);
+          loadTransactions();
+          loadTransfers(year, month);
+        }
+      })
+      .catch(err => console.error('Error activating pending recurring:', err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, year, month]);
+
   // Single-pass categorization + totals
   // Legacy transactions with investment_account_id or savings_account_id are shown
   // in their groups for backward compatibility but excluded from P&L totals.
@@ -164,7 +186,7 @@ export default function MonthlyDashboardPage() {
     const t = { investments: 0, recurringIncome: 0, oneTimeIncome: 0, recurringExpenses: 0, oneTimeExpenses: 0 };
 
     for (const tx of transactions) {
-      // Old-style account-routed transactions: display them but exclude from P&L totals
+      // Old-style account-routed transactions are excluded from P&L totals; pending items are included
       const excludeFromPnL = !!(tx.investment_account_id || tx.savings_account_id);
 
       if (tx.category_name === 'Investimenti') {
@@ -480,11 +502,29 @@ export default function MonthlyDashboardPage() {
         {/* Forms column — on mobile: first (natural order), on desktop: right column */}
         <div className="mb-5 md:mb-0 md:order-2 md:sticky md:top-28 md:self-start md:max-h-[calc(100vh-8rem)] md:overflow-y-auto space-y-3">
           <InlineIncomeForm
-            onSuccess={loadTransactions}
+            onSuccess={(savedDate) => {
+              const d = new Date(savedDate);
+              const sy = d.getFullYear();
+              const sm = d.getMonth() + 1;
+              if (sy !== year || sm !== month) {
+                router.push(`/dashboard/${sy}/${String(sm).padStart(2, '0')}`);
+              } else {
+                loadTransactions();
+              }
+            }}
             defaultDate={getValidDateForMonth(year, month)}
           />
           <InlineTransactionForm
-            onSuccess={loadTransactions}
+            onSuccess={(savedDate) => {
+              const d = new Date(savedDate);
+              const sy = d.getFullYear();
+              const sm = d.getMonth() + 1;
+              if (sy !== year || sm !== month) {
+                router.push(`/dashboard/${sy}/${String(sm).padStart(2, '0')}`);
+              } else {
+                loadTransactions();
+              }
+            }}
             defaultDate={getValidDateForMonth(year, month)}
           />
           <InvestmentForm

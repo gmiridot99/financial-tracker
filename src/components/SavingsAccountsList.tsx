@@ -229,7 +229,7 @@ export default function SavingsAccountsList({ userId, onAccountsChanged }: Savin
                   <div className="flex items-center gap-2 ml-3">
                     <button
                       onClick={() => setDeletingAccount(account)}
-                      className="w-7 h-7 flex items-center justify-center text-warmText-muted hover:text-warmData-expense hover:bg-warmBg-tertiary rounded-lg transition-colors"
+                      className="w-11 h-11 md:w-7 md:h-7 flex items-center justify-center text-warmText-muted hover:text-warmData-expense hover:bg-warmBg-tertiary rounded-lg transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -286,7 +286,7 @@ export default function SavingsAccountsList({ userId, onAccountsChanged }: Savin
                         setEditingBalanceId(account.id);
                         setEditingBalanceValue(Number(account.balance).toFixed(2).replace('.', ','));
                       }}
-                      className="w-7 h-7 flex items-center justify-center text-warmText-muted hover:text-warmText-secondary hover:bg-warmBg-secondary rounded-lg transition-colors flex-shrink-0"
+                      className="w-11 h-11 md:w-7 md:h-7 flex items-center justify-center text-warmText-muted hover:text-warmText-secondary hover:bg-warmBg-secondary rounded-lg transition-colors flex-shrink-0"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>

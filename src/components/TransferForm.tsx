@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeftRight } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTransfers } from '@/hooks/useTransfers';
@@ -192,48 +192,54 @@ export default function TransferForm({ onTransferAdded, defaultDate }: TransferF
         <div className="grid grid-cols-2 gap-2">
           <div>
             <p className="text-xs text-warmText-tertiary mb-1">Da</p>
-            <select
-              value={fromAccountId}
-              onChange={e => {
-                setFromAccountId(e.target.value);
-                setError('');
-              }}
-              className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary appearance-none"
-            >
-              <option value="">Seleziona...</option>
-              {savingsAccounts.map(acc => (
-                <option key={acc.id} value={acc.id}>{acc.name}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                value={fromAccountId}
+                onChange={e => {
+                  setFromAccountId(e.target.value);
+                  setError('');
+                }}
+                className="w-full h-11 px-3 pr-9 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmAccent-primary appearance-none"
+              >
+                <option value="">Seleziona...</option>
+                {savingsAccounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>{acc.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-warmText-tertiary pointer-events-none" />
+            </div>
           </div>
 
           <div>
             <p className="text-xs text-warmText-tertiary mb-1">A</p>
-            <select
-              value={destAccountKey}
-              onChange={e => {
-                setDestAccountKey(e.target.value);
-                setTriggerPac(false);
-                setError('');
-              }}
-              className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary appearance-none"
-            >
-              <option value="">Seleziona...</option>
-              {savingsAccounts.length > 0 && (
-                <optgroup label="Conti risparmio">
-                  {savingsAccounts.map(acc => (
-                    <option key={acc.id} value={SAVINGS_PREFIX + acc.id}>{acc.name}</option>
-                  ))}
-                </optgroup>
-              )}
-              {investmentAccounts.length > 0 && (
-                <optgroup label="Conti investimento">
-                  {investmentAccounts.map(acc => (
-                    <option key={acc.id} value={INVESTMENT_PREFIX + acc.id}>{acc.name}</option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
+            <div className="relative">
+              <select
+                value={destAccountKey}
+                onChange={e => {
+                  setDestAccountKey(e.target.value);
+                  setTriggerPac(false);
+                  setError('');
+                }}
+                className="w-full h-11 px-3 pr-9 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmAccent-primary appearance-none"
+              >
+                <option value="">Seleziona...</option>
+                {savingsAccounts.length > 0 && (
+                  <optgroup label="Conti risparmio">
+                    {savingsAccounts.map(acc => (
+                      <option key={acc.id} value={SAVINGS_PREFIX + acc.id}>{acc.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {investmentAccounts.length > 0 && (
+                  <optgroup label="Conti investimento">
+                    {investmentAccounts.map(acc => (
+                      <option key={acc.id} value={INVESTMENT_PREFIX + acc.id}>{acc.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-warmText-tertiary pointer-events-none" />
+            </div>
           </div>
         </div>
 
@@ -248,13 +254,13 @@ export default function TransferForm({ onTransferAdded, defaultDate }: TransferF
               setAmount(e.target.value);
               setError('');
             }}
-            className="h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary placeholder:text-warmText-disabled"
+            className="h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmAccent-primary placeholder:text-warmText-disabled"
           />
           <input
             type="date"
             value={date}
             onChange={e => setDate(e.target.value)}
-            className="h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary"
+            className="h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmAccent-primary"
           />
         </div>
 
@@ -264,7 +270,7 @@ export default function TransferForm({ onTransferAdded, defaultDate }: TransferF
           placeholder="Nota (opzionale)"
           value={note}
           onChange={e => setNote(e.target.value)}
-          className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-sm focus:outline-none focus:border-warmAccent-primary placeholder:text-warmText-disabled"
+          className="w-full h-11 px-3 bg-warmBg-primary rounded-xl border border-warmText-muted text-warmText-primary text-base md:text-sm focus:outline-none focus:border-warmAccent-primary placeholder:text-warmText-disabled"
         />
 
         {/* Recurring toggle */}
@@ -293,7 +299,7 @@ export default function TransferForm({ onTransferAdded, defaultDate }: TransferF
             <select
               value={frequency}
               onChange={e => setFrequency(e.target.value as 'monthly' | 'weekly' | 'yearly')}
-              className="h-9 px-3 bg-warmBg-primary rounded-lg border border-warmText-muted text-warmText-primary text-xs focus:outline-none focus:border-warmAccent-primary"
+              className="h-9 px-3 bg-warmBg-primary rounded-lg border border-warmText-muted text-warmText-primary text-base md:text-xs focus:outline-none focus:border-warmAccent-primary"
             >
               <option value="monthly">Mensile</option>
               <option value="weekly">Settimanale</option>
