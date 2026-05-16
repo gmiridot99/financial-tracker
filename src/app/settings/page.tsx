@@ -3,10 +3,18 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Sliders } from 'lucide-react';
+import { ArrowLeft, Sliders, KeyRound } from 'lucide-react';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
+
+const passwordSchema = z.object({
+  newPassword: z.string().min(6, 'Password minimo 6 caratteri'),
+  confirmPassword: z.string(),
+}).refine((d) => d.newPassword === d.confirmPassword, {
+  message: 'Le password non coincidono',
+  path: ['confirmPassword'],
+});
 
 const settingsSchema = z.object({
   savings_percentage: z.number().min(0).max(100),
@@ -22,6 +30,10 @@ export default function SettingsPage() {
   const [investmentsPercentage, setInvestmentsPercentage] = useState(60);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -62,6 +74,28 @@ export default function SettingsPage() {
     setInvestmentsPercentage(value);
     setSavingsPercentage(100 - value);
     setError('');
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordLoading(true);
+    try {
+      const validated = passwordSchema.parse({ newPassword, confirmPassword });
+      const { error } = await supabase.auth.updateUser({ password: validated.newPassword });
+      if (error) throw error;
+      toast.success('Password aggiornata!');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        setPasswordError(err.errors[0].message);
+      } else {
+        toast.error('Errore aggiornamento password.');
+      }
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -132,6 +166,50 @@ export default function SettingsPage() {
             <Sliders className="w-6 h-6 text-warmBg-primary" />
           </div>
           <h1 className="text-2xl font-bold text-warmText-primary">Impostazioni</h1>
+        </div>
+
+        {/* Password change card */}
+        <div className="bg-warmBg-secondary rounded-2xl p-6 shadow-lg mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <KeyRound className="w-5 h-5 text-warmText-secondary" />
+            <h2 className="text-lg font-semibold text-warmText-primary">Cambia Password</h2>
+          </div>
+          <form onSubmit={handlePasswordChange} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-warmText-secondary mb-2">
+                Nuova password
+              </label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => { setNewPassword(e.target.value); setPasswordError(''); }}
+                required
+                className="w-full px-4 py-3 bg-warmBg-primary border border-warmText-muted rounded-xl text-base md:text-sm text-warmText-primary placeholder:text-warmText-disabled focus:outline-none focus:border-warmAccent-primary transition-colors"
+                placeholder="••••••••"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-warmText-secondary mb-2">
+                Conferma password
+              </label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => { setConfirmPassword(e.target.value); setPasswordError(''); }}
+                required
+                className="w-full px-4 py-3 bg-warmBg-primary border border-warmText-muted rounded-xl text-base md:text-sm text-warmText-primary placeholder:text-warmText-disabled focus:outline-none focus:border-warmAccent-primary transition-colors"
+                placeholder="••••••••"
+              />
+            </div>
+            {passwordError && <p className="text-sm text-warmData-expense">{passwordError}</p>}
+            <button
+              type="submit"
+              disabled={passwordLoading}
+              className="w-full px-4 py-3 bg-warmAccent-primary text-warmBg-primary font-semibold rounded-xl hover:bg-warmAccent-hover transition-colors disabled:opacity-50"
+            >
+              {passwordLoading ? 'Aggiornamento...' : 'Aggiorna password'}
+            </button>
+          </form>
         </div>
 
         <div className="bg-warmBg-secondary rounded-2xl p-6 shadow-lg">

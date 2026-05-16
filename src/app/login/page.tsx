@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { LogIn } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 const loginSchema = z.object({
   email: z.string().email('Email non valida'),
@@ -22,8 +23,30 @@ export default function LoginPage() {
   });
   const [errors, setErrors] = useState<Partial<Record<keyof LoginFormData, string>>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
   const { signIn } = useAuth();
   const router = useRouter();
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail) return;
+    setResetLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      toast.success('Email di reset inviata! Controlla la tua casella.');
+      setShowForgotPassword(false);
+      setResetEmail('');
+    } catch {
+      toast.error('Errore invio email. Verifica l\'indirizzo.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,6 +154,37 @@ export default function LoginPage() {
               {isLoading ? 'Accesso...' : 'Accedi'}
             </button>
           </form>
+
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setShowForgotPassword(!showForgotPassword)}
+              className="text-sm text-warmText-tertiary hover:text-warmAccent-primary transition-colors"
+            >
+              Hai dimenticato la password?
+            </button>
+          </div>
+
+          {showForgotPassword && (
+            <form onSubmit={handleForgotPassword} className="mt-4 pt-4 border-t border-warmBg-tertiary space-y-3">
+              <p className="text-sm text-warmText-secondary">Inserisci la tua email per ricevere il link di reset.</p>
+              <input
+                type="email"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                required
+                className="w-full px-4 py-3 bg-warmBg-primary border border-warmText-muted rounded-xl text-base md:text-sm text-warmText-primary placeholder:text-warmText-disabled focus:outline-none focus:border-warmAccent-primary transition-colors"
+                placeholder="tua@email.com"
+              />
+              <button
+                type="submit"
+                disabled={resetLoading}
+                className="w-full py-2.5 bg-warmBg-tertiary text-warmText-primary font-medium rounded-xl hover:bg-warmBg-hover transition-colors disabled:opacity-50"
+              >
+                {resetLoading ? 'Invio...' : 'Invia link reset'}
+              </button>
+            </form>
+          )}
 
           <div className="mt-6 text-center">
             <p className="text-sm text-warmText-tertiary">
