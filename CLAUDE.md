@@ -35,6 +35,12 @@ src/
     layout/
       AppLayout.tsx                     # Responsive shell (mobile navbar + bottom padding)
       MobileNavBar.tsx                  # Fixed bottom nav bar (4 tabs, mobile only)
+    investment/
+      AccountCard.tsx                   # Per-account header, cash zone, buy form, holdings, PAC panel
+      HoldingRow.tsx                    # Single holding row (expand: chart, edit, sell, move, history)
+      SellHoldingModal.tsx | MoveHoldingModal.tsx | EditTransactionModal.tsx
+      DeleteTransactionModal.tsx | DeleteAccountModal.tsx | CreateAccountForm.tsx
+      types.ts                          # InvestmentAccountsHook alias + TYPE_BADGE_STYLES/TYPE_LABELS
     TransactionCard.tsx                 # Transaction display card (with selection mode)
     TransactionGroup.tsx                # Reusable transaction group (colorScheme + variant styling)
     TransactionModal.tsx                # Add/Edit/Delete transactions modal
@@ -61,8 +67,18 @@ src/
       MilestonesCards.tsx               # Wealth milestone tracking + warnings
       ExportButton.tsx                  # Export (TXT/CSV/JSON/clipboard)
   hooks/
-    useInvestmentAccounts.ts            # Investment accounts business logic (atomic ops, rollback)
+    useInvestmentAccounts.ts            # Investment accounts: form state + composition of investment/* ops
     useSavingsAccounts.ts               # Savings accounts business logic (atomic ops, rollback)
+    investment/
+      types.ts                          # Shared op types + parseEuropeanDecimal/formatCurrency
+      useInvestmentAccountsData.ts      # Accounts/holdings/prices state + loadAccounts + price effects
+      accountCrud.ts                    # create/rename/delete account, edit cash balance
+      cashOps.ts                        # Deposit (PAC trigger), transfer + rollbackCashBalance helper
+      tradeOps.ts                       # Buy (search/manual), sell, move holding between accounts
+      transactionOps.ts                 # Edit/delete investment transactions
+      holdingAdjustOps.ts               # Manual holding qty/price adjustment
+    recap/
+      wealthPeriodSummary.ts            # Shared start/end wealth + growth% derivation for recap pages
   contexts/
     AuthContext.tsx                      # Auth state (signUp, signIn, signOut)
   lib/
@@ -164,6 +180,8 @@ Animation:    animate-cardEnter | animate-sheetSlideUp (bottom-sheet mobile moda
 - **Costanti UI come module-level**: `TYPE_BADGE_STYLES`, `CARD_COLORS`, `ICONS` ecc. vanno fuori dal componente (module scope), non dentro il render
 - **Single-pass memoized categorization**: quando il render filtra lo stesso array N volte per criteri diversi (type, is_recurring, category), sostituire con un singolo `useMemo` che fa un `for` loop e smista in un oggetto `{ group1: [], group2: [] }` calcolando i totali nello stesso passaggio. Riduce N iterazioni a 1 e previene ricalcoli ad ogni render. Esempio: dashboard page 8 filter + 5 reduce → 1 for loop
 - **Propagazione loading state via callback prop**: quando un componente figlio usa un hook con stato di loading e il parent ha bisogno di quel valore per un componente fratello, aggiungere una prop callback (`onPricesLoadingChange`) + `useEffect` nel figlio che la invoca al cambio di stato. Verificato: typecheck pulito dopo aggiunta prop + useEffect (es. `InvestmentAccountsList` → `patrimonio/page.tsx` → `NetWorthCard`)
+- **Verificare un refactor meccanico senza test E2E**: quando si spezza un file grande che contiene write DB e logica finanziaria, e non esiste copertura E2E, la build verde non basta. Confrontare invarianti tra vecchio e nuovo: numero di chiamate `from(`/`.update(`/`.insert(`/`.select(`, numero di filtri `eq('user_id'`, numero di `toast.error`/`toast.success`, e le chiavi dell'oggetto ritornato dal hook (API pubblica). Se un conteggio cambia, il refactor ha perso o duplicato un'operazione. Verificato sullo split di `useInvestmentAccounts` (54/54 chiavi identiche, tutti i conteggi invariati) — poi typecheck + test + build + smoke HTTP sulle route
+- **Refactor paralleli su file disgiunti**: due refactor indipendenti possono girare in parallelo solo assegnando a ciascuno una lista esplicita di path modificabili (file esistenti + nuove directory dedicate). Senza ownership dichiarata dei file, due modifiche concorrenti sullo stesso file si sovrascrivono
 - **Wiring cross-hook via componente intermedio**: quando due hook indipendenti devono interagire (es. PAC rules + investment accounts), il componente che li istanzia entrambi crea la callback di collegamento e la passa come prop/parametro a uno dei due. Non far dipendere un hook dall'altro direttamente (es. `InvestmentAccountsList` crea `handlePacExecution` che collega `usePacRules` → `useInvestmentAccounts.pacExecutor`)
 
 ### Atomic Financial Operations (Supabase)
@@ -212,6 +230,11 @@ Animation:    animate-cardEnter | animate-sheetSlideUp (bottom-sheet mobile moda
 16. **Non-atomic savings operations**: `SavingsAccountsList.handleDeposit` e `handleTransfer` avevano lo stesso problema del punto 15 — step1 senza rollback se step2 fallisce. Fixed: estratto `useSavingsAccounts` hook con `rollbackAccountBalance`/`rollbackSavingsUnallocated`. Utility `parseEuropeanDecimal`/`formatCurrency` riusate da `useInvestmentAccounts` (eliminata duplicazione)
 17. **Auto-allocation duplicata e non-atomica**: `SavingsAutoRulesPanel.handleApplyNow` reimplementava tutta la logica di distribuzione di `applyAutoAllocationRules` (read balance -> update balance -> create transfer -> update unallocated) senza rollback. Errori durante l'update del conto N+1 lasciavano i conti 1..N già aggiornati. Fixed: estratta `executeAutoAllocation()` in `wealth-accounts.ts` con tracked rollback (`appliedChanges` array). Sia `applyAutoAllocationRules` che il pannello ora chiamano questa funzione condivisa
 18. **applyNegativeMonthDeduction senza rollback**: aggiornava N conti in sequenza e poi l'unallocated, senza nessun rollback in caso di errore. Se il conto K falliva, i conti 1..K-1 erano già decrementati. Fixed: aggiunto tracked rollback identico a `executeAutoAllocation`
+
+19. **Feature esistente ma assente in produzione**: il flusso "password dimenticata" esisteva committato in locale da mesi ma non era mai stato pushato (`git status -sb` → `ahead 1`). Prima di reimplementare una feature che "manca online", confrontare sempre HEAD locale con `origin/main`: il codice puo' esserci gia'
+20. **Vercel Deployment Protection rompe i link auth via email**: con `ssoProtection: all_except_custom_domains` e nessun dominio custom, ogni URL `*.vercel.app` passa dal login Vercel. I link di reset password Supabase atterrano sul muro SSO invece che su `/reset-password`, tranne nel browser gia' autenticato su Vercel. Diagnosi: `curl` della route in prod restituisce 200 ma con `<title>Login – Vercel</title>`. Serve disattivare la protezione o collegare un dominio custom
+21. **`git add -A` puo' committare segreti dai file di configurazione dei tool**: `.claude/settings.local.json` conteneva un Supabase PAT dentro la stringa di una permission (`Bash(set SUPABASE_ACCESS_TOKEN=sbp_...)`). GitHub push protection ha bloccato il push (GH013). Stageare esplicitamente i path invece di `-A`, e ispezionare i file di config generati dai tool prima di trackarli
+22. **Le due route recap NON sono duplicati**: `/dashboard/[year]/recap` = riepilogo dettagliato anno singolo; `/dashboard/recap` = analizzatore range multi-anno (`?start=&end=`). Dati, componenti e formattazione valuta differiscono. Unificarle cambierebbe l'output: condividere solo la derivazione matematica comune (`computeWealthPeriodSummary`)
 
 ## Commands
 
