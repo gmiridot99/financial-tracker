@@ -1,0 +1,505 @@
+{
+  "project": "Financial Life Planner",
+  "branchName": "ralph/wealth-portfolio-management",
+  "description": "Wealth & Portfolio Management - Page to manage savings accounts with auto-allocation rules and investment accounts with real asset tracking via Yahoo Finance and CoinGecko",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create savings-related database tables and TypeScript types",
+      "description": "As a developer, I need database tables for savings accounts, auto-allocation rules, and transfer history, plus TypeScript interfaces.",
+      "acceptanceCriteria": [
+        "Create migration file in supabase/migrations/ with savings_accounts table: id (UUID PK DEFAULT gen_random_uuid()), user_id (UUID FK to auth.users NOT NULL), name (TEXT NOT NULL), balance (NUMERIC(12,2) DEFAULT 0), created_at (TIMESTAMPTZ DEFAULT NOW()), sort_order (INTEGER DEFAULT 0)",
+        "Create savings_auto_rules table: id (UUID PK), user_id (UUID FK), savings_account_id (UUID FK to savings_accounts ON DELETE CASCADE), percentage (NUMERIC(5,2) NOT NULL CHECK between 0 and 100), is_active (BOOLEAN DEFAULT true), created_at (TIMESTAMPTZ DEFAULT NOW())",
+        "Create savings_transfers table: id (UUID PK), user_id (UUID FK), from_account_id (UUID nullable FK to savings_accounts), to_account_id (UUID nullable FK to savings_accounts), amount (NUMERIC(12,2) NOT NULL CHECK > 0), note (TEXT), created_at (TIMESTAMPTZ DEFAULT NOW())",
+        "Add RLS policies on all three tables: SELECT/INSERT/UPDATE/DELETE WHERE user_id = auth.uid()",
+        "Add indexes on user_id for all tables, and on savings_account_id for savings_auto_rules",
+        "Add TypeScript interfaces (SavingsAccount, SavingsAutoRule, SavingsTransfer) to src/types/database.ts",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Migration: 20260206000001_create_savings_accounts.sql. Types: SavingsAccount, SavingsAutoRule, SavingsTransfer added to database.ts."
+    },
+    {
+      "id": "US-002",
+      "title": "Create investment-related database tables and TypeScript types",
+      "description": "As a developer, I need database tables for investment accounts, asset buy/sell transactions, and a price cache.",
+      "acceptanceCriteria": [
+        "Create migration file with investment_accounts table: id (UUID PK), user_id (UUID FK NOT NULL), name (TEXT NOT NULL), cash_balance (NUMERIC(12,2) DEFAULT 0), created_at (TIMESTAMPTZ DEFAULT NOW()), sort_order (INTEGER DEFAULT 0)",
+        "Create investment_transactions table: id (UUID PK), user_id (UUID FK), investment_account_id (UUID FK to investment_accounts ON DELETE CASCADE), asset_symbol (TEXT NOT NULL), asset_name (TEXT NOT NULL), asset_type (TEXT NOT NULL CHECK IN ('stock','etf','crypto','commodity','bond')), transaction_type (TEXT NOT NULL CHECK IN ('buy','sell')), quantity (NUMERIC(18,8) NOT NULL CHECK > 0), price_per_unit (NUMERIC(18,8) NOT NULL CHECK > 0), total_amount (NUMERIC(12,2) NOT NULL CHECK > 0), currency (TEXT DEFAULT 'EUR'), transaction_date (DATE NOT NULL), created_at (TIMESTAMPTZ DEFAULT NOW())",
+        "Create asset_prices_cache table: id (UUID PK), symbol (TEXT UNIQUE NOT NULL), asset_type (TEXT NOT NULL), current_price (NUMERIC(18,8)), price_currency (TEXT DEFAULT 'USD'), last_updated (TIMESTAMPTZ DEFAULT NOW())",
+        "Add RLS policies on investment_accounts and investment_transactions (user_id = auth.uid()). asset_prices_cache is readable by all authenticated users",
+        "Add indexes on user_id and investment_account_id",
+        "Add TypeScript interfaces (InvestmentAccount, InvestmentTransaction, AssetPriceCache) to src/types/database.ts",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Migration: 20260206000002_create_investment_accounts.sql. Types: InvestmentAccount, InvestmentTransaction, AssetPriceCache added to database.ts."
+    },
+    {
+      "id": "US-003",
+      "title": "Create unallocated balances table and recalculation utility",
+      "description": "As a developer, I need to track unallocated savings and investment amounts per user, synced from the monthly tracker.",
+      "acceptanceCriteria": [
+        "Create migration with unallocated_balances table: id (UUID PK), user_id (UUID FK UNIQUE), savings_unallocated (NUMERIC(12,2) DEFAULT 0), investments_unallocated (NUMERIC(12,2) DEFAULT 0), last_auto_applied (TIMESTAMPTZ nullable), updated_at (TIMESTAMPTZ DEFAULT NOW())",
+        "Add RLS policy: user_id = auth.uid()",
+        "Create src/lib/wealth-accounts.ts with recalculateUnallocated(userId) function",
+        "Function queries all months' transactions via Supabase to compute total savings and total investments amounts using the same logic as calculateMonthlySummary()",
+        "Savings unallocated = total cumulative savings - sum of all savings_accounts.balance",
+        "Investments unallocated = total cumulative investments - sum of all investment_accounts.cash_balance - sum of all buy transaction amounts + sum of all sell transaction amounts",
+        "Upserts result to unallocated_balances with onConflict user_id",
+        "Add TypeScript interface UnallocatedBalance to src/types/database.ts",
+        "Write unit tests for the recalculation logic with mock data",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Migration: 20260206000003_create_unallocated_balances.sql. Type: UnallocatedBalance in database.ts. Pure calc: wealth-calculations.ts computeUnallocated(). DB wrapper: wealth-accounts.ts recalculateUnallocated(). Tests: 8/8 pass. Updated vitest 1.6->3.2.4 for Node v24 compat."
+    },
+    {
+      "id": "US-004",
+      "title": "Create patrimonio page layout with unallocated display and tabs",
+      "description": "As a user, I want a Patrimonio page where I can see my unallocated balances and switch between Risparmi and Investimenti tabs.",
+      "acceptanceCriteria": [
+        "Create page at src/app/dashboard/patrimonio/page.tsx",
+        "Page is auth-protected (redirects to /login if unauthenticated)",
+        "Header: 'Patrimonio' title with back button (ChevronLeft) linking to /dashboard",
+        "Two prominent cards at top: 'Non destinati - Risparmi' (blue/warmData-savings themed) and 'Non destinati - Investimenti' (purple/warmData-investment themed) showing amounts from unallocated_balances",
+        "Tab bar below cards: 'Risparmi' and 'Investimenti' tabs, switchable via client-side state (no page reload)",
+        "Each tab shows placeholder content for now ('Conti risparmio' / 'Conti investimento')",
+        "Loading state while fetching unallocated balances",
+        "Add navigation link to patrimonio from monthly dashboard header (Wallet icon + 'Patrimonio' text)",
+        "Uses warm theme tokens (warmBg, warmText, warmAccent)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Created src/app/dashboard/patrimonio/page.tsx with auth-protection, unallocated balance cards (savings blue, investments purple), tab bar (Risparmi/Investimenti), and placeholder content. Added Wallet icon nav link in monthly dashboard header."
+    },
+    {
+      "id": "US-005",
+      "title": "Create and manage savings accounts",
+      "description": "As a user, I want to create named savings accounts to organize my savings by purpose.",
+      "acceptanceCriteria": [
+        "'Nuovo conto risparmio' button at top of Risparmi tab opens inline form",
+        "Form has single text input for account name (required, min 1 char) and Salva/Annulla buttons",
+        "Created account appears as card showing: name (editable via pencil icon), balance formatted as EUR",
+        "Edit name: clicking pencil icon turns name into text input, save on Enter or blur",
+        "Delete: trash icon appears only if balance === 0. If balance > 0, show toast warning 'Trasferisci i fondi prima di eliminare'",
+        "Accounts fetched from savings_accounts table with .eq('user_id', user.id) and ordered by sort_order, created_at",
+        "Empty state text: 'Nessun conto risparmio. Crea il primo!'",
+        "Toast notifications on create/edit/delete success and errors",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Created SavingsAccountsList component with CRUD. Integrated into patrimonio page Risparmi tab."
+    },
+    {
+      "id": "US-006",
+      "title": "Manual allocation from unallocated to savings accounts",
+      "description": "As a user, I want to move money from 'Non destinati' to my savings accounts.",
+      "acceptanceCriteria": [
+        "Each savings account card has a 'Deposita' button (ArrowDownToLine icon or similar)",
+        "Clicking opens inline amount input with European decimal support (comma and dot accepted)",
+        "Validation: amount > 0 and amount <= current savings_unallocated balance",
+        "On confirm: decreases savings_unallocated in unallocated_balances table, increases target savings_account.balance",
+        "Creates savings_transfers row: from_account_id = NULL (Non destinati), to_account_id = target account id",
+        "Both the unallocated card and account card balances update immediately in UI without page refresh",
+        "Toast: 'Depositati X.XX in [account name]'",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Added Deposita functionality to SavingsAccountsList with ArrowDownToLine icon, European decimal input, validation, and savings_transfers record creation."
+    },
+    {
+      "id": "US-007",
+      "title": "Transfer between savings accounts and back to Non destinati",
+      "description": "As a user, I want to move money between savings accounts or back to unallocated.",
+      "acceptanceCriteria": [
+        "Each savings account card has 'Trasferisci' button (ArrowLeftRight icon)",
+        "Opens modal with: amount input (European decimal), destination dropdown listing all other savings accounts + 'Non destinati'",
+        "Validation: amount > 0, amount <= source account balance",
+        "On confirm: decreases source account balance, increases destination balance (or savings_unallocated if 'Non destinati')",
+        "Creates savings_transfers row with from_account_id and to_account_id set correctly (NULL for Non destinati)",
+        "All affected balances update immediately in UI",
+        "Toast: 'Trasferiti X.XX da [source] a [destination]'",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Added Trasferisci functionality with ArrowLeftRight icon, destination dropdown (other accounts + Non destinati), validation, balance updates, and savings_transfers record."
+    },
+    {
+      "id": "US-008",
+      "title": "Auto-allocation rules UI for savings",
+      "description": "As a user, I want to set percentage rules so my savings are automatically distributed each month.",
+      "acceptanceCriteria": [
+        "'Regole automatiche' button in savings tab header opens a settings panel/modal",
+        "Panel lists each savings account with: account name, percentage input (0-100, numeric), on/off toggle (is_active)",
+        "Validation: sum of all active percentages must be <= 100. If > 100, show inline error 'La somma delle percentuali non puo superare 100%'",
+        "Display remaining percentage: 'Rimane in Non destinati: X%'",
+        "Save button upserts rules to savings_auto_rules table (one row per account)",
+        "'Applica ora' button: takes current savings_unallocated and distributes according to active rules. Creates savings_transfers entries. Updates account balances and unallocated",
+        "Toast on 'Applica ora': 'Distribuiti: X.XX a [Account A], Y.YY a [Account B]'",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Created SavingsAutoRulesPanel component with per-account percentage rules, on/off toggles, sum validation, remaining % display, Save and Applica ora buttons."
+    },
+    {
+      "id": "US-009",
+      "title": "Auto-apply savings rules on page load",
+      "description": "As a developer, I need auto-allocation to trigger when the user visits the patrimonio page and new unallocated funds exist.",
+      "acceptanceCriteria": [
+        "Create applyAutoAllocationRules(userId) function in src/lib/wealth-accounts.ts",
+        "Function queries active rules (is_active = true) for the user",
+        "Only runs if savings_unallocated > 0 AND last_auto_applied is NULL or older than the latest month with new savings data",
+        "Calculates amount per account: savings_unallocated * (percentage / 100), rounded to 2 decimals",
+        "Creates savings_transfers entries for each allocation",
+        "Updates each savings_account.balance and decreases savings_unallocated",
+        "Updates last_auto_applied timestamp in unallocated_balances",
+        "Called on patrimonio page load after recalculateUnallocated()",
+        "Write unit tests covering: normal distribution, partial rules (sum < 100%), zero unallocated, no active rules",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Pure computeAutoAllocation() in wealth-calculations.ts. DB wrapper applyAutoAllocationRules() in wealth-accounts.ts. Called on patrimonio page load after recalculateUnallocated(). 8 new tests (16 total) all pass."
+    },
+    {
+      "id": "US-010",
+      "title": "Negative month proportional deduction from savings",
+      "description": "As a user, when I have a negative month, the deficit is proportionally deducted from all my savings accounts.",
+      "acceptanceCriteria": [
+        "Create applyNegativeMonthDeduction(userId, year, month, deficit) function in src/lib/wealth-accounts.ts",
+        "Function queries all savings_accounts with balance > 0 for the user",
+        "Calculates total savings = sum of all account balances",
+        "Each account deduction = deficit * (account_balance / total_savings), rounded to 2 decimals",
+        "If total_savings < deficit: drain all accounts to 0, reduce savings_unallocated by remainder",
+        "Creates savings_transfers entry per account: from_account_id = account, to_account_id = NULL, note = 'Deduzione mese negativo MM/YYYY'",
+        "Integrated into recalculateUnallocated: detects months where net < 0 and applies deduction",
+        "Write unit tests: proportional split with 3 accounts, deficit exceeds total savings, single account, zero-balance accounts skipped",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Pure computeNegativeMonthDeduction() in wealth-calculations.ts. DB wrapper applyNegativeMonthDeduction() in wealth-accounts.ts. 6 new tests (22 total) all pass."
+    },
+    {
+      "id": "US-011",
+      "title": "Create and manage investment accounts",
+      "description": "As a user, I want to create named investment accounts to organize my investments by broker/platform.",
+      "acceptanceCriteria": [
+        "'Nuovo conto investimento' button at top of Investimenti tab opens inline form",
+        "Form has single text input for account name (required) and Salva/Annulla buttons",
+        "Created account appears as card: name (editable via pencil), cash balance (EUR), holdings placeholder, total value",
+        "Edit name: pencil icon turns name into editable input",
+        "Delete: trash icon only if cash_balance === 0 AND no investment_transactions exist for account. Otherwise toast warning",
+        "Accounts fetched from investment_accounts with .eq('user_id', user.id) ordered by sort_order, created_at",
+        "Empty state: 'Nessun conto investimento. Crea il primo!'",
+        "Toast on create/edit/delete",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Created InvestmentAccountsList component with CRUD + deposit. Integrated into patrimonio page Investimenti tab."
+    },
+    {
+      "id": "US-012",
+      "title": "Manual allocation from unallocated to investment accounts",
+      "description": "As a user, I want to move money from 'Non destinati Investimenti' to my investment account cash balance.",
+      "acceptanceCriteria": [
+        "Each investment account card has 'Deposita' button",
+        "Clicking opens inline amount input with European decimal support",
+        "Validation: amount > 0, amount <= investments_unallocated",
+        "On confirm: decreases investments_unallocated, increases account cash_balance",
+        "Both unallocated card and account card update immediately in UI",
+        "Toast: 'Depositati X.XX in [account name]'",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Deposit functionality included in InvestmentAccountsList component. Validates amount <= investments_unallocated, updates both balances, shows toast."
+    },
+    {
+      "id": "US-013",
+      "title": "Transfer cash between investment accounts and to savings",
+      "description": "As a user, I want to move cash between investment accounts or to Non destinati (investments or savings).",
+      "acceptanceCriteria": [
+        "Each investment account card has 'Trasferisci' button for cash_balance",
+        "Opens modal: amount input, destination dropdown with options: other investment accounts, 'Non destinati Investimenti', 'Non destinati Risparmi'",
+        "Validation: amount > 0, amount <= source account cash_balance",
+        "Cross-pool transfer to 'Non destinati Risparmi': increases savings_unallocated (allows moving investment proceeds to savings)",
+        "All affected balances update immediately",
+        "Toast with transfer details",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": "Added transfer functionality to InvestmentAccountsList. Supports: other investment accounts, Non destinati Investimenti, Non destinati Risparmi (cross-pool)."
+    },
+    {
+      "id": "US-014",
+      "title": "Yahoo Finance asset search API route",
+      "description": "As a developer, I need a server-side API route to search Yahoo Finance for stocks, ETFs, bonds, and commodities.",
+      "acceptanceCriteria": [
+        "Install yahoo-finance2 npm package",
+        "Create API route at src/app/api/assets/search/route.ts (Next.js Route Handler)",
+        "GET endpoint accepts query param: ?q=QUERY",
+        "Calls yahoo-finance2 search() method with the query string",
+        "Maps results to: { symbol, name, type (stock/etf/bond/commodity based on quoteType), exchange, currency }",
+        "Returns JSON array of max 20 results",
+        "Returns empty array [] when no results (200 status, not error)",
+        "Returns 500 with { error: 'Errore nella ricerca' } on API failure",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "Created src/app/api/assets/search/route.ts. Uses yahoo-finance2 v3. Maps quoteType to stock/etf/bond/commodity/crypto. Max 20 results."
+    },
+    {
+      "id": "US-015",
+      "title": "CoinGecko crypto search API route",
+      "description": "As a developer, I need a server-side API route to search CoinGecko for cryptocurrencies.",
+      "acceptanceCriteria": [
+        "Create API route at src/app/api/assets/search-crypto/route.ts",
+        "GET endpoint accepts query param: ?q=QUERY",
+        "Calls CoinGecko free API: GET https://api.coingecko.com/api/v3/search?query=QUERY",
+        "Maps results from response.coins to: { symbol (uppercase), name, type: 'crypto', coingecko_id: coin.id, thumb: coin.thumb }",
+        "Returns JSON array of max 20 results",
+        "Returns empty array on no results",
+        "Returns 500 with { error: 'Errore nella ricerca crypto' } on failure",
+        "Handles rate limiting: if 429 response, return 429 with retry-after header",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": "Created src/app/api/assets/search-crypto/route.ts. Calls CoinGecko free API. Handles 429 rate limiting. Max 20 results."
+    },
+    {
+      "id": "US-016",
+      "title": "Unified asset search modal component",
+      "description": "As a user, I want to search for any financial asset from a single search bar when buying in an investment account.",
+      "acceptanceCriteria": [
+        "Create src/components/AssetSearchModal.tsx",
+        "Modal with search text input at top, debounced at 300ms",
+        "On search: calls /api/assets/search and /api/assets/search-crypto in parallel via Promise.all",
+        "Results displayed in unified scrollable list with: type badge (colored: blue 'Stock', green 'ETF', orange 'Crypto', gray 'Bond', brown 'Commodity'), symbol in bold, full name, exchange/network info",
+        "Loading spinner during search",
+        "Empty state: 'Nessun risultato per [query]'",
+        "Clicking a result calls onSelect(asset) callback prop and closes modal",
+        "Close button (X) and click-outside-to-close",
+        "Responsive: full-screen on mobile, centered modal on desktop (max-w-lg)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "Created AssetSearchModal.tsx. Parallel search via Promise.all. Type badges, debounced 300ms, click-outside-to-close, responsive."
+    },
+    {
+      "id": "US-017",
+      "title": "Buy asset form within investment account",
+      "description": "As a user, I want to record an asset purchase specifying quantity and price, deducting from my account cash balance.",
+      "acceptanceCriteria": [
+        "Each investment account card has 'Compra' button that opens AssetSearchModal (US-016)",
+        "After selecting asset from search, show buy form with: asset symbol+name (read-only), quantity input (supports up to 8 decimals for crypto), price per unit input, total amount (auto-calculated: qty * price, read-only), transaction date (default today, date picker)",
+        "European decimal support on quantity and price inputs (comma and dot)",
+        "Validation: quantity > 0, price_per_unit > 0, total_amount <= account cash_balance",
+        "If total > cash_balance show error: 'Fondi insufficienti (disponibili: X.XX)'",
+        "On confirm: inserts investment_transactions row (transaction_type='buy'), decreases account cash_balance by total_amount",
+        "Toast: 'Acquistati [qty] [symbol] a [price]/unita'",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "Buy form integrated into InvestmentAccountsList. AssetSearchModal opens on Compra click. Quantity (8 decimals), price, date, auto-calculated total. Deducts from cash_balance."
+    },
+    {
+      "id": "US-018",
+      "title": "Holdings display with positions per investment account",
+      "description": "As a user, I want to see my current holdings in each investment account with quantity, average price, and current value.",
+      "acceptanceCriteria": [
+        "Each investment account card shows holdings list below cash balance",
+        "Holdings computed by aggregating investment_transactions for the account: group by asset_symbol, sum buy quantities - sum sell quantities = current quantity",
+        "Only show holdings where current quantity > 0",
+        "Each holding row: type badge, symbol, name, quantity held, avg buy price (total cost / total qty bought, weighted), current value placeholder (will be filled by price API in US-020)",
+        "Account total displayed: cash_balance + sum of holdings current values",
+        "Empty state per account: 'Nessun asset in portafoglio'",
+        "Create utility function computeHoldings(transactions) in src/lib/portfolio.ts returning array of { symbol, name, type, quantity, avgPrice, costBasis }",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": "Created portfolio.ts with computeHoldings(). Holdings displayed per account: type badge, symbol, name, qty, avg price. Empty state. Account total shows cost basis."
+    },
+    {
+      "id": "US-019",
+      "title": "Sell asset form with destination choice",
+      "description": "As a user, I want to sell an asset and choose where the proceeds go.",
+      "acceptanceCriteria": [
+        "Each holding row has 'Vendi' button",
+        "Opens sell form: asset symbol+name (read-only), max quantity available, quantity to sell input (max = holding quantity), sell price per unit input, total proceeds (auto-calculated: qty * price, read-only), destination dropdown: 'Cash nel conto' (default) | 'Non destinati Investimenti' | 'Non destinati Risparmi'",
+        "Validation: sell quantity > 0 AND <= holding quantity, sell price > 0",
+        "On confirm: inserts investment_transactions row (transaction_type='sell'), updates destination balance accordingly",
+        "Calculates realized P&L: (sell_price - avg_buy_price) * sell_quantity. Show in toast",
+        "Toast: 'Venduti [qty] [symbol] - P&L: +X.XX / -X.XX'",
+        "If full sell (qty = total holding): holding disappears from list",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 19,
+      "passes": true,
+      "notes": "Sell form in holdings row. Destination: cash/unallocated investments/unallocated savings. P&L in toast. Full sell removes holding."
+    },
+    {
+      "id": "US-020",
+      "title": "Yahoo Finance live price fetch API route",
+      "description": "As a developer, I need an API route to fetch current prices for stocks/ETFs/bonds/commodities.",
+      "acceptanceCriteria": [
+        "Create API route at src/app/api/assets/prices/route.ts",
+        "GET endpoint accepts: ?symbols=AAPL,MSFT,VWCE.DE (comma-separated)",
+        "Uses yahoo-finance2 quote() method for batch price fetch",
+        "Returns JSON object: { [symbol]: { price, currency, changePercent, lastUpdated } }",
+        "Upserts each result into asset_prices_cache table (symbol, current_price, price_currency, last_updated)",
+        "Handles missing symbols: returns null value for that symbol in response",
+        "Max 50 symbols per request (return 400 if exceeded)",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "CoinGecko live price fetch API route",
+      "description": "As a developer, I need an API route to fetch current crypto prices.",
+      "acceptanceCriteria": [
+        "Create API route at src/app/api/assets/prices-crypto/route.ts",
+        "GET endpoint accepts: ?ids=bitcoin,ethereum,solana (comma-separated CoinGecko IDs)",
+        "Calls CoinGecko: GET https://api.coingecko.com/api/v3/simple/price?ids=IDS&vs_currencies=eur,usd&include_24hr_change=true",
+        "Returns JSON object: { [id]: { priceEur, priceUsd, change24hPercent, lastUpdated } }",
+        "Upserts results into asset_prices_cache (use coingecko_id as symbol, price in EUR)",
+        "Handles rate limiting: if 429, return 429 status with Retry-After header",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Auto-refresh prices on page load and interval",
+      "description": "As a user, I want portfolio values to update automatically when I open the page and every 5 minutes.",
+      "acceptanceCriteria": [
+        "On patrimonio page load (Investimenti tab): collect all unique asset symbols from investment_transactions",
+        "Split symbols by type: yahoo symbols (stock/etf/bond/commodity) and coingecko IDs (crypto)",
+        "Call /api/assets/prices and /api/assets/prices-crypto in parallel",
+        "Update holdings display with current prices and computed current values",
+        "Set interval: repeat price fetch every 5 minutes (300000ms)",
+        "Show 'Ultimo aggiornamento: HH:mm' timestamp below portfolio section",
+        "Manual refresh button (RefreshCw icon) to force immediate price update",
+        "Subtle loading indicator during refresh (spinner on refresh button, not blocking UI)",
+        "Clear interval on component unmount (useEffect cleanup)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Realized and unrealized gain/loss calculations",
+      "description": "As a user, I want to see my profit/loss on each holding and overall portfolio.",
+      "acceptanceCriteria": [
+        "Create calculatePortfolioMetrics(transactions, currentPrices) in src/lib/portfolio.ts",
+        "Unrealized P&L per holding: (current_price - avg_buy_price) * quantity_held",
+        "Unrealized P&L percentage: ((current_price - avg_buy_price) / avg_buy_price) * 100",
+        "Realized P&L per asset: for each sell transaction, (sell_price - avg_buy_price_at_sell_time) * sell_quantity",
+        "Avg buy price uses weighted average method: total_cost_of_buys / total_quantity_bought",
+        "Per-account totals: total_invested (sum cost basis), current_value (sum holdings * current_price + cash), total_unrealized_pl, total_realized_pl",
+        "Overall portfolio totals across all accounts",
+        "All EUR amounts rounded to 2 decimals",
+        "Update holdings display (US-018) to show: unrealized P&L amount and percentage, color-coded green/red",
+        "Write unit tests with sample buy/sell scenarios",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Portfolio summary cards at top of investments tab",
+      "description": "As a user, I want summary cards showing total portfolio value, P&L, and available cash.",
+      "acceptanceCriteria": [
+        "Add summary section at top of Investimenti tab (below Non destinati card, above accounts list)",
+        "Four cards in responsive grid (2-col mobile, 4-col desktop): 'Valore Totale' (total portfolio value), 'P&L Non Realizzato' (unrealized, green/red), 'P&L Realizzato' (realized, green/red), 'Cash Disponibile' (sum of all account cash_balance)",
+        "P&L cards show both absolute amount and percentage",
+        "Values use CountUp component for animated transitions",
+        "Values update when prices refresh (US-022)",
+        "Uses warm theme colors: green for positive P&L, red for negative",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Savings transfer history view",
+      "description": "As a user, I want to see the history of movements between my savings accounts.",
+      "acceptanceCriteria": [
+        "'Cronologia' button in savings tab header opens expandable history section",
+        "Queries savings_transfers table for user, ordered by created_at DESC, limit 20",
+        "Each entry: date (Italian format dd/MM/yyyy HH:mm), from name (or 'Non destinati'), to name (or 'Non destinati'), amount formatted EUR, note if present",
+        "Color: green border for deposits (from Non destinati), red for withdrawals (to Non destinati), neutral for account-to-account",
+        "'Carica altri' button for pagination (offset += 20)",
+        "Empty state: 'Nessun movimento'",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-026",
+      "title": "Investment transaction history per account",
+      "description": "As a user, I want to see the full buy/sell history for each investment account.",
+      "acceptanceCriteria": [
+        "Each investment account card has 'Storico' toggle/button to expand transaction list",
+        "Queries investment_transactions for account_id, ordered by transaction_date DESC, limit 20",
+        "Each entry: date (Italian format), type badge ('Acquisto' green / 'Vendita' red), asset symbol + name, quantity, price per unit, total amount",
+        "For sell entries: also show realized P&L (green/red)",
+        "'Carica altri' button for pagination",
+        "Empty state: 'Nessuna operazione'",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

@@ -1,0 +1,323 @@
+{
+  "project": "Financial Life Planner",
+  "branchName": "ralph/dashboard-redesign",
+  "description": "Redesign della dashboard mensile: rimozione hero section e stats pills ridondanti, sostituzione con grafici (spending trend + recap breakdown), header pulito con desktop top nav, bulk select spostato vicino alle transazioni, layout 2 colonne desktop (transazioni a sinistra + form a destra sticky), import ricorrenti contestuale",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Aggiungere 'manual' come asset_type nei tipi TypeScript e nella logica holdings",
+      "description": "As a developer, I need to add 'manual' as a valid asset_type so that manually entered assets are supported throughout the system.",
+      "acceptanceCriteria": [
+        "In src/types/database.ts: aggiungere 'manual' alla union type di InvestmentTransaction.asset_type: 'stock' | 'etf' | 'crypto' | 'commodity' | 'bond' | 'manual'",
+        "Nessuna migration DB necessaria (asset_type e' TEXT nel DB, non un enum PostgreSQL)",
+        "In src/lib/market-prices.ts fetchMarketPrices(): gli asset con type 'manual' devono essere esclusi dal fetch prezzi (non hanno simbolo riconoscibile da Yahoo/CoinGecko). Filtrare i simboli manual PRIMA di chiamare le API",
+        "In src/lib/portfolio.ts calculatePortfolioMetrics() (se presente): per asset manual, il current_price = average_buy_price (P&L non realizzato = 0). Se la funzione riceve una mappa prezzi che non contiene il simbolo manual, usare il prezzo medio di acquisto come fallback",
+        "Typecheck passa (npm run typecheck)",
+        "Tests esistenti continuano a passare (npm test)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Added 'manual' to InvestmentTransaction.asset_type union in database.ts. Updated computeHoldingsWithPL in portfolio.ts: manual assets without market price use costBasis as marketValue (P&L=0). Updated useInvestmentAccounts hook: filtered out manual assets from fetchMarketPrices call. Typecheck clean, all 119 tests pass."
+    },
+    {
+      "id": "US-002",
+      "title": "Flusso acquisto asset manuale in InvestmentAccountsList",
+      "description": "As a user, I want to add manual assets (not listed on markets) to my investment accounts, entering name and price myself.",
+      "acceptanceCriteria": [
+        "Nel componente InvestmentAccountsList (o nel hook useInvestmentAccounts): quando l'utente clicca 'Compra' su un conto, mostrare una scelta iniziale con 2 bottoni: 'Cerca su mercati' (apre AssetSearchModal come oggi) e 'Inserisci manualmente'",
+        "La scelta iniziale deve essere un piccolo pannello inline dentro il form di acquisto, NON un modal separato. Stile coerente con la palette scura (warmBg-tertiary per sfondo bottoni)",
+        "Cliccando 'Inserisci manualmente': mostrare un form con campi: Nome asset (text, obbligatorio, min 1 char), Quantita' (numeric, 8 decimali, obbligatorio, > 0), Prezzo unitario (numeric, 2 decimali, obbligatorio, > 0), Totale (auto-calcolato: quantita * prezzo, readonly), Data operazione (default oggi, formato italiano)",
+        "Supporto decimale europeo (virgola e punto) per tutti i campi numerici",
+        "Al submit: inserire in investment_transactions con asset_type = 'manual', asset_symbol = nome asset (troncato a 20 char uppercase), asset_name = nome completo, currency = 'EUR'",
+        "Decrementare cash_balance del conto come un buy normale. Validazione: total_amount <= cash_balance",
+        "Toast di conferma 'Asset aggiunto manualmente'",
+        "L'asset manuale appare immediatamente nella lista holdings del conto",
+        "Typecheck passa",
+        "Tests esistenti continuano a passare"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Added handleBuyManual() to useInvestmentAccounts hook with full atomic operation (insert transaction + decrease cash_balance, rollback on failure). Updated InvestmentAccountsList buy form: replaced single 'Cerca asset' button with 2-button choice ('Cerca su mercati' + 'Inserisci manualmente'). Manual form: name input + quantity + price (European decimal) + date + auto-calculated total. asset_type='manual', asset_symbol=name.substring(0,20).toUpperCase(). Toast: 'Asset aggiunto manualmente'. Typecheck clean, 119 tests pass."
+    },
+    {
+      "id": "US-003",
+      "title": "Visualizzazione holdings per asset manuali con badge distinto",
+      "description": "As a user, I want manual assets to be clearly distinguishable from market assets in my holdings list.",
+      "acceptanceCriteria": [
+        "Nella lista holdings di ogni conto investimento: gli asset manuali mostrano un badge 'Manuale' con stile distinto (bg-warmText-tertiary/20 text-warmText-secondary, o equivalente grigio/neutro)",
+        "Per asset manuali: la colonna 'Prezzo attuale' mostra il prezzo medio di acquisto (non c'e' prezzo di mercato)",
+        "Per asset manuali: P&L non realizzato = 0.00 EUR (0.00%), mostrato in grigio/neutro (non verde ne' rosso)",
+        "Per asset manuali: NON mostrare l'icona/indicatore di variazione prezzo di mercato",
+        "La vendita di asset manuali funziona identicamente agli asset API: stessa form con quantita', prezzo vendita, destinazione proventi",
+        "Aggiungere 'manual' al TYPE_BADGE_STYLES in AssetSearchModal (o dove definito): badge grigio neutro",
+        "Typecheck passa"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Added 'manual' to TYPE_BADGE_STYLES (bg-warmText-tertiary/20 text-warmText-secondary) and TYPE_LABELS ('Manuale') in both InvestmentAccountsList.tsx and AssetSearchModal.tsx. Holdings display: manual assets show P&L as grey '0,00 EUR (0.0%)' instead of green/red. Expanded details: 2-column grid for manual (Quantita + Prezzo acquisto), no 'Prezzo' column, no AssetPriceChart. Sell button works same as API assets, price field left empty for manual. Typecheck clean, 119 tests pass."
+    },
+    {
+      "id": "US-004",
+      "title": "Pre-fill prezzo di mercato nel form di acquisto per asset API",
+      "description": "As a user, when I buy a market asset, I want the price field pre-filled with the current market price already fetched on page load.",
+      "acceptanceCriteria": [
+        "VERIFICARE se questo e' gia' implementato controllando InvestmentAccountsList e useInvestmentAccounts: la US-007 del precedente Ralph loop dice che e' fatto. Se gia' funzionante, marcare come passes=true senza modifiche",
+        "Se NON funzionante: quando l'utente seleziona un asset da AssetSearchModal, il campo prezzo unitario viene pre-compilato con il prezzo di mercato gia' in memoria (da marketPrices map o asset_prices_cache)",
+        "Mostrare riferimento sotto il campo: 'Prezzo di mercato: EUR X.XX'",
+        "L'utente puo' modificare liberamente il prezzo pre-compilato",
+        "Per asset manuali (US-002): il campo prezzo resta vuoto (nessun pre-fill)",
+        "Typecheck passa"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Already implemented in previous Ralph loop (US-007). Verified: onSelect in AssetSearchModal checks inv.marketPrices first, then falls back to asset_prices_cache DB. marketReferencePrice state displays 'Prezzo di mercato: EUR X.XX' below price input. Manual buy form has no pre-fill (separate flow). No changes needed."
+    },
+    {
+      "id": "US-005",
+      "title": "Riordinare layout mobile - torta tra grafico performance e lista conti",
+      "description": "As a mobile user, I want the distribution pie chart to appear between the performance chart and the accounts list for better visual flow.",
+      "acceptanceCriteria": [
+        "Su mobile (sotto breakpoint lg): l'ordine degli elementi nella pagina patrimonio diventa: 1) NetWorthCard, 2) Non destinati cards, 3) Tab bar Risparmi/Investimenti, 4) Grafico performance (SavingsPerformanceChart o InvestmentPerformanceChart + controvalore card), 5) WealthDistributionChart con toggle per-asset/per-conto, 6) Lista conti (SavingsAccountsList o InvestmentAccountsList + auto rules)",
+        "Spostare il blocco WealthDistributionChart mobile (attualmente lg:hidden dopo la lista conti) tra il grafico performance e la lista conti",
+        "Il grafico performance su mobile deve apparire PRIMA della torta (attualmente su mobile il grafico performance e' nella colonna destra che su mobile cade DOPO la lista conti - va riordinato)",
+        "Su desktop (lg+): il layout 2 colonne resta INVARIATO - colonna destra con grafici + torta, colonna sinistra con conti. NON toccare il layout desktop",
+        "Verificare che non ci siano spazi vuoti o gap anomali nel flusso mobile",
+        "Typecheck passa"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Mobile layout reordered: moved lg:hidden distribution chart block from after accounts list to between right column (performance charts) and accounts list div. On mobile, flow is now: NetWorthCard > Unallocated cards > Tab bar > Performance chart > Distribution pie > Accounts list. Desktop layout unchanged (hidden lg:block / lg:hidden pattern). Typecheck clean, 119 tests pass."
+    },
+    {
+      "id": "US-006",
+      "title": "Armonizzare layout desktop - no spazi vuoti, simmetria visiva",
+      "description": "As a desktop user, I want the two-column layout to feel balanced with no awkward empty spaces.",
+      "acceptanceCriteria": [
+        "Su desktop (lg+): verificare che la colonna destra (grafici + torta) e la colonna sinistra (conti) siano bilanciate visivamente",
+        "Se la colonna sinistra e' piu' corta della destra (pochi conti): la colonna destra non deve avere spazio vuoto sotto la torta - lg:sticky lg:self-start gia' presente, verificare che funzioni",
+        "Se la colonna sinistra e' piu' lunga della destra: la colonna destra deve restare sticky e seguire lo scroll senza lasciare gap",
+        "Verificare che il controvalore card (investimenti tab) + InvestmentPerformanceChart + WealthDistributionChart riempiano armoniosamente la colonna destra",
+        "Verificare che SavingsPerformanceChart + WealthDistributionChart riempiano armoniosamente la colonna destra quando e' attivo il tab risparmi",
+        "Se necessario, aggiustare spacing (gap, margin, padding) tra i componenti della colonna destra per uniformita'",
+        "NON aggiungere componenti fittizi o placeholder per riempire spazio - meglio un layout piu' compatto",
+        "Typecheck passa"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Desktop layout harmonized: 1) Tab bar margin changed to 'mb-6 lg:mb-0' to eliminate double-spacing (was mb-6 + grid row gap = 3rem, now just grid gap = 1.5rem). 2) Removed hardcoded 'mb-6' from SavingsPerformanceChart and InvestmentPerformanceChart wrapper divs - parent space-y-4 now controls all gaps uniformly (1rem). 3) Right column sticky (lg:sticky lg:top-4 lg:self-start) verified working for both short and long left columns. 4) WealthDistributionChart already has no extra margin (p-5 only). Typecheck clean, 119 tests pass."
+    },
+    {
+      "id": "US-007",
+      "title": "Pulire header dashboard: rimuovere icone ridondanti e aggiungere pill link recap",
+      "description": "As a mobile user, I don't want redundant navigation icons in the dashboard header since the bottom navbar already provides access to Patrimonio, Simulatore, and Impostazioni. As any user, I want recap links presented as readable text pills instead of cryptic icons.",
+      "acceptanceCriteria": [
+        "In src/app/dashboard/[year]/[month]/page.tsx: RIMUOVERE dal top bar header questi bottoni icona: Wallet (Patrimonio), Calculator (Simulatore), LogOut, CheckSquare (bulk select) -- totale 4 bottoni rimossi",
+        "MANTENERE nell'header: il titolo 'Financial Life' a sinistra",
+        "SOSTITUIRE le icone BarChart3 e TrendingUp con due pill testuali affiancate a destra del titolo: 'Recap annuale' (link a /dashboard/{year}/recap) e 'Multi-anno' (link a /dashboard/recap?start={year-2}&end={year}). Stile pill: px-3 py-1.5 rounded-full bg-warmBg-tertiary text-warmText-secondary text-xs font-medium hover:bg-warmBg-hover transition-colors",
+        "Rimuovere gli import inutilizzati: LogOut, CheckSquare, Calculator, Wallet, BarChart3, TrendingUp (se non piu' usate altrove nel file)",
+        "Rimuovere la chiamata a signOut dal componente (non piu' necessaria qui, il logout e' nella pagina settings)",
+        "L'app resta funzionale: navigazione mesi, transazioni, form, tutto funziona come prima",
+        "Typecheck passa",
+        "Tests esistenti continuano a passare"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Removed Wallet, Calculator, LogOut, CheckSquare icons from header. Replaced BarChart3 and TrendingUp with text pills 'Recap {year}' and 'Multi-anno'. Removed signOut from useAuth destructure. Typecheck clean, 119 tests pass."
+    },
+    {
+      "id": "US-008",
+      "title": "Aggiungere desktop top navigation bar in AppLayout",
+      "description": "As a desktop user, I need a top navigation bar (visible only at md: breakpoint and above) since the mobile bottom navbar is hidden on desktop, and now that we removed the nav icons from the dashboard header.",
+      "acceptanceCriteria": [
+        "In src/components/layout/AppLayout.tsx: aggiungere un componente DesktopNavBar (puo' essere inline o in un file separato src/components/layout/DesktopNavBar.tsx)",
+        "Il DesktopNavBar e' visibile SOLO da md: in su (hidden md:block). Il MobileNavBar resta invariato (md:hidden)",
+        "Contenuto del DesktopNavBar: una barra orizzontale in cima con sfondo bg-warmBg-secondary, border-b border-warmBg-tertiary, altezza h-14",
+        "Layout interno: flex justify-between items-center con max-w-6xl mx-auto px-6",
+        "Lato sinistro: titolo 'Financial Life' (text-sm font-semibold text-warmText-primary) come link a /dashboard",
+        "Lato destro: 5 link orizzontali con icone piccole (w-4 h-4) + label testo: Dashboard (LayoutDashboard), Patrimonio (Wallet), Simulatore (Calculator), Impostazioni (Settings), Logout",
+        "Il link attivo ha text-warmAccent-primary, gli altri text-warmText-secondary hover:text-warmText-primary",
+        "Il link Logout non naviga ma chiama signOut() da useAuth(). Usare un <button> stilizzato come gli altri link",
+        "Active state detection: riusare la stessa logica isActive() gia' presente in MobileNavBar.tsx per determinare quale link e' attivo",
+        "In AppLayout: aggiungere padding-top su desktop (pt-14 md:pt-14 o simile) per compensare la barra fixed/sticky",
+        "Il MobileNavBar NON deve cambiare in nessun modo",
+        "Typecheck passa"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Created DesktopNavBar.tsx with 4 nav links + Logout button, hidden md:block. Updated AppLayout to include DesktopNavBar and add md:pt-14 for top padding. MobileNavBar unchanged. Typecheck clean."
+    },
+    {
+      "id": "US-009",
+      "title": "Rimuovere hero section: big number, mini stats pills, e wealth summary row",
+      "description": "As a user, I want the dashboard to show useful charts instead of a large cash number and redundant stats pills that duplicate information already visible in the MonthlyFlowChart.",
+      "acceptanceCriteria": [
+        "In src/app/dashboard/[year]/[month]/page.tsx: RIMUOVERE il blocco 'Main Balance - Centered' (div con 'Cash disponibile' + CountUp)",
+        "RIMUOVERE il blocco 'Mini Stats Pills' (div con 3 pill colorate: Entrate, Spese, Investiti)",
+        "RIMUOVERE il blocco 'Wealth Summary Row' (div con patrimonio investimenti + risparmi pills)",
+        "RIMUOVERE il blocco WealthSetupBanner dal hero (lo sposteremo nella zona form/contenuto in una story successiva)",
+        "MANTENERE: il div sticky top-0 warm-gradient-hero con il top bar (titolo + pill recap) e il month navigation (<  Mese Anno  >)",
+        "RIMUOVERE la variabile cashRemaining (non piu' usata) e il relativo calcolo",
+        "RIMUOVERE import di CountUp (se non usato altrove)",
+        "RIMUOVERE import di WealthSetupBanner (verra' re-importato nella prossima story se necessario)",
+        "Lo sticky header diventa piu' compatto: solo titolo+pills in alto, navigazione mese sotto, poi fine dello sticky",
+        "Il pb-4 del contenitore sticky puo' essere ridotto a pb-3 dato che c'e' meno contenuto",
+        "RIMUOVERE gli state e gli effetti relativi a wealth che non servono piu' qui: wealthData, isLoadingWealth, hasInitialWealth, loadWealthData(), checkInitialWealth useEffect",
+        "RIMUOVERE import di calculateWealthForMonth (non piu' usato)",
+        "L'app resta funzionale dopo questa rimozione. La zona sotto lo sticky (MonthlyFlowChart + forms + transazioni) non cambia",
+        "Typecheck passa",
+        "Tests esistenti continuano a passare"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Removed: Cash disponibile big number + CountUp, mini stats pills, WealthSetupBanner, wealth summary row. Removed all wealth-related state/effects (wealthData, isLoadingWealth, hasInitialWealth, loadWealthData, checkInitialWealth, calculateWealthForMonth import). Sticky header now compact: title+pills+month nav only. Changed z-50 to z-40 and added md:top-14 for desktop nav bar. Typecheck clean, 119 tests pass."
+    },
+    {
+      "id": "US-010",
+      "title": "Creare componente MonthlySpendingTrendChart (andamento spesa mensile)",
+      "description": "As a user, I want to see a chart showing how my total spending evolves across recent months, so I can spot trends and manage my budget better.",
+      "acceptanceCriteria": [
+        "Creare src/components/MonthlySpendingTrendChart.tsx: un componente Recharts che mostra l'andamento della spesa totale mese per mese",
+        "Props: userId (string), currentYear (number), currentMonth (number). Il componente fetcha i propri dati internamente",
+        "Dati: caricare le transazioni degli ultimi 6 mesi (incluso il mese corrente) con una singola query Supabase. Per ogni mese, calcolare totalExpenses (somma amount dove type='expense'). Includere il filtro user_id (RLS defense-in-depth)",
+        "Chart type: AreaChart (Recharts) con area sotto la linea riempita con gradiente warmData-expense (opacita 0.15 -> 0). Linea stroke warmData-expense (#F87171), strokeWidth 2",
+        "Asse X: abbreviazione mese in italiano (Gen, Feb, Mar...) usando date-fns format con locale it. Mostrare tutti i 6 mesi",
+        "Asse Y: nascosto (hide={true}) per compattezza, i valori si leggono dal tooltip",
+        "Tooltip custom: sfondo bg-warmBg-tertiary, bordo border-warmText-muted, testo 'Spese: EUR X.XXX,XX' in formato italiano",
+        "Il mese corrente viene evidenziato con un dot piu' grande (r={5}) rispetto agli altri (r={3})",
+        "Wrapper: bg-warmBg-secondary rounded-2xl p-4, titolo h3 'Andamento Spese' text-sm font-medium text-warmText-tertiary mb-3",
+        "Altezza chart: 160px (compatto, deve affiancarsi a un altro chart)",
+        "Loading state: skeleton pulse (div animate-pulse bg-warmBg-tertiary rounded-xl h-[160px])",
+        "Empty state (nessun dato): messaggio 'Nessun dato disponibile' centrato in grigio",
+        "Il componente deve essere 'use client' e importato con dynamic() e { ssr: false } nella pagina dashboard (come gia' fatto per MonthlyFlowChart)",
+        "Typecheck passa",
+        "Tests esistenti continuano a passare"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Created MonthlySpendingTrendChart.tsx: Recharts AreaChart showing last 6 months of expenses. Self-fetching with single Supabase query, filters out Investimenti category. Gradient fill warmData-expense, custom Italian tooltip, larger dot for current month. Loading skeleton and empty state included. Typecheck clean."
+    },
+    {
+      "id": "US-011",
+      "title": "Creare componente MonthlyRecapChart (breakdown entrate/spese/investimenti/cash)",
+      "description": "As a user, I want to see a visual breakdown of how my monthly income is distributed across expenses, investments, and remaining cash, at a glance.",
+      "acceptanceCriteria": [
+        "Creare src/components/MonthlyRecapChart.tsx: un componente Recharts che mostra la distribuzione del mese corrente",
+        "Props: totalIncome (number), totalExpenses (number), totalInvestments (number). Dati passati dal parent, NO fetch interno (il parent li ha gia')",
+        "Calcolo interno: savings = totalIncome - totalExpenses - totalInvestments (cash rimanente, puo' essere negativo)",
+        "Chart type: BarChart orizzontale (layout='vertical') con una singola barra stacked che mostra la composizione del reddito",
+        "OPPURE (alternativa preferibile): un mini donut/ring chart (PieChart con innerRadius/outerRadius) con 3-4 segmenti: Spese (warmData-expense), Investimenti (warmData-investment), Cash rimanente (warmData-savings). Se totalIncome == 0, mostrare un ring grigio vuoto",
+        "Sotto il chart: una legenda compatta con 3-4 righe: icona colore + label + importo EUR formattato. Stile: flex flex-col gap-1, testo text-xs",
+        "Wrapper: bg-warmBg-secondary rounded-2xl p-4, titolo h3 'Recap Mese' text-sm font-medium text-warmText-tertiary mb-3",
+        "Altezza totale (chart + legenda): circa 200-220px per bilanciare con MonthlySpendingTrendChart",
+        "Se totalIncome == 0 e totalExpenses == 0: mostrare 'Nessuna transazione' centrato",
+        "Il componente e' 'use client' e importato con dynamic() e { ssr: false } nella pagina dashboard",
+        "Typecheck passa",
+        "Tests esistenti continuano a passare"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Created MonthlyRecapChart.tsx: Recharts PieChart (donut) showing expenses/investments/cash-remaining breakdown. Props-driven (no fetch). Compact legend with colored dots. Handles empty state (no transactions) and edge cases (all income = savings). Typecheck clean."
+    },
+    {
+      "id": "US-012",
+      "title": "Integrare i due chart nella dashboard al posto del vecchio hero",
+      "description": "As a user, I want to see the spending trend chart and monthly recap chart prominently on my dashboard, right below the month navigation.",
+      "acceptanceCriteria": [
+        "In src/app/dashboard/[year]/[month]/page.tsx: SOTTO lo sticky header (dopo la chiusura del div sticky), inserire una nuova sezione chart",
+        "Layout chart: su mobile (default) i due chart si impilano verticalmente con gap-4. Su desktop (md:) affiancati in un grid a 2 colonne (grid md:grid-cols-2 gap-4)",
+        "Colonna sinistra: MonthlySpendingTrendChart con userId={user.id} currentYear={year} currentMonth={month}",
+        "Colonna destra: MonthlyRecapChart con totalIncome={summary.totalIncome} totalExpenses={summary.totalExpenses} totalInvestments={totals.investments}",
+        "I chart sono importati con dynamic() e { ssr: false }",
+        "La sezione chart ha padding px-4 mt-4",
+        "RIMUOVERE il vecchio MonthlyFlowChart (ZONA B) dalla pagina. Rimuovere import se non usato altrove",
+        "Il file MonthlyFlowChart.tsx NON viene cancellato (potrebbe servire altrove o in futuro), semplicemente non viene piu' importato nella dashboard",
+        "Il resto della pagina (forms + transazioni) resta sotto i chart con mt-5 come prima",
+        "Typecheck passa",
+        "Tests esistenti continuano a passare"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Replaced MonthlyFlowChart with two new charts in a responsive grid (stacked mobile, side-by-side desktop). MonthlyFlowChart.tsx file kept but no longer imported. Both charts loaded with dynamic() ssr:false. Typecheck clean, 119 tests pass."
+    },
+    {
+      "id": "US-013",
+      "title": "Spostare bulk select toggle vicino alla sezione transazioni",
+      "description": "As a user, I want the bulk select toggle to be contextually placed near the transaction list, not lost in the header. This makes the multi-select feature more discoverable and logically grouped.",
+      "acceptanceCriteria": [
+        "In src/app/dashboard/[year]/[month]/page.tsx: aggiungere un header di sezione 'Transazioni' sopra la lista transazioni (dopo i form, prima del loading state / empty state / transaction groups)",
+        "L'header di sezione ha layout: flex justify-between items-center mb-3",
+        "Lato sinistro: h2 'Transazioni' text-base font-semibold text-warmText-primary",
+        "Lato destro: bottone testuale '[Seleziona]' (text-xs text-warmAccent-primary hover:text-warmAccent-hover cursor-pointer font-medium). Quando selectionMode e' attivo, il testo diventa '[Annulla]' e chiama cancelSelection()",
+        "Il bottone [Seleziona] chiama enterSelectionMode() come faceva il vecchio CheckSquare icon nel header",
+        "L'header 'Transazioni' e' visibile SOLO quando ci sono transazioni (hasTransactions && !isLoadingTransactions)",
+        "Il vecchio CheckSquare button nell'header sticky e' gia' stato rimosso nella US-007. Se per qualche motivo e' ancora presente, rimuoverlo qui",
+        "BulkDeleteActionBar continua a funzionare esattamente come prima (appare fixed bottom-0 quando ci sono item selezionati)",
+        "Typecheck passa",
+        "Tests esistenti continuano a passare"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": "Added 'Transazioni' section header with [Seleziona]/[Annulla] toggle above transaction groups. Visible only when hasTransactions. Typecheck clean."
+    },
+    {
+      "id": "US-014",
+      "title": "Layout desktop 2 colonne: transazioni a sinistra, form a destra sticky",
+      "description": "As a desktop user, I want transactions on the left and input forms on the right in a two-column layout, so I can reference my existing transactions while adding new ones without scrolling.",
+      "acceptanceCriteria": [
+        "In src/app/dashboard/[year]/[month]/page.tsx: la ZONA C (forms + transazioni) diventa un layout a 2 colonne su desktop",
+        "Su mobile (default): layout single-column invariato -- forms sopra, poi header 'Transazioni', poi lista transazioni. Ordine attuale mantenuto",
+        "Su desktop (md:): grid md:grid-cols-[1fr_380px] gap-6. Colonna sinistra: header 'Transazioni' + transaction groups. Colonna destra: i 3 form (InlineIncomeForm, InlineTransactionForm, InvestmentForm) in un div sticky (md:sticky md:top-[ALTEZZA_HEADER] md:self-start) con space-y-3",
+        "L'altezza header sticky va calcolata in base all'header attuale. Usare md:top-28 come punto di partenza (regolabile), corrispondente all'altezza del sticky header (~112px)",
+        "La colonna destra sticky ha un max-height con overflow-y-auto nel caso i 3 form espansi superino il viewport: md:max-h-[calc(100vh-8rem)] md:overflow-y-auto",
+        "Su mobile i form vengono PRIMA delle transazioni (ordine attuale). Su desktop i form vanno nella colonna DESTRA. Usare md:order-2 sulla colonna form e md:order-1 sulla colonna transazioni per invertire l'ordine visivo solo su desktop",
+        "Il WealthSetupBanner (se era nella zona form, o se serve ripristinarlo) va nella colonna destra sopra i form, visibile solo se hasInitialWealth===false. NOTA: se lo state hasInitialWealth e' stato rimosso nella US-009, valutare se re-aggiungerlo qui o posizionare il banner diversamente. Se il banner non e' piu' necessario nella dashboard (dato che esiste in patrimonio), non re-aggiungerlo",
+        "La colonna sinistra (transazioni) include: header 'Transazioni' (con [Seleziona]), loading state, empty state, transaction groups",
+        "Empty state e loading state occupano l'intera colonna sinistra",
+        "Typecheck passa",
+        "Tests esistenti continuano a passare"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "ZONA C restructured: md:grid md:grid-cols-[1fr_380px] md:gap-6. Forms column: md:order-2 md:sticky md:top-28 with max-height overflow. Transactions column: md:order-1. Mobile stays single-column (forms first, then transactions). Empty state text adapts: 'qui sopra' mobile / 'a destra' desktop. Typecheck clean."
+    },
+    {
+      "id": "US-015",
+      "title": "Import ricorrenti contestuale: banner per mesi vuoti, link per mesi con transazioni",
+      "description": "As a user, I want to import recurring transactions contextually: a prominent banner when the month is empty, and a discrete link otherwise. The old RefreshCw icon next to the month name should be removed.",
+      "acceptanceCriteria": [
+        "In src/app/dashboard/[year]/[month]/page.tsx: RIMUOVERE il bottone RefreshCw dalla navigazione mese (il bottone con title='Importa transazioni ricorrenti' affiancato al nome mese). L'import di RefreshCw puo' restare se usato dal pull-to-refresh indicator",
+        "NUOVO: quando il mese ha zero transazioni (!hasTransactions && !isLoadingTransactions), mostrare un banner/card al posto dell'empty state attuale. Il banner: bg-warmBg-secondary rounded-2xl p-6 text-center, con testo 'Nessuna transazione per questo mese' (text-warmText-tertiary text-sm mb-3), e un bottone primario 'Importa ricorrenti dal mese precedente' (bg-warmAccent-primary text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-warmAccent-hover). Il bottone chiama handleForceGenerateRecurring(). Mostrare spinner e disabled durante il caricamento (isGeneratingRecurring)",
+        "NUOVO: quando il mese HA transazioni (hasTransactions && !isLoadingTransactions), aggiungere un link discreto nell'header 'Transazioni', accanto al bottone [Seleziona]. Il link: 'Importa ricorrenti' (text-xs text-warmText-tertiary hover:text-warmText-secondary cursor-pointer). Cliccando chiama handleForceGenerateRecurring(). Se isGeneratingRecurring, mostrare un piccolo spinner inline (w-3 h-3) al posto del testo",
+        "L'ordine nell'header 'Transazioni' diventa: 'Transazioni' a sinistra, poi a destra: 'Importa ricorrenti' + '|' separatore + '[Seleziona]/[Annulla]'",
+        "Il bottone 'Importa ricorrenti' nel banner vuoto ha sotto una riga di testo helper: 'oppure aggiungi transazioni con i form qui sopra' (text-xs text-warmText-disabled mt-2) -- su desktop: 'oppure aggiungi transazioni con i form a destra'",
+        "La logica handleForceGenerateRecurring resta invariata (chiama copyRecurringFromPreviousMonth + toast)",
+        "Typecheck passa",
+        "Tests esistenti continuano a passare"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": "Removed RefreshCw button from month navigation. Empty state now shows contextual 'Importa ricorrenti dal mese precedente' button with spinner. When transactions exist, discrete 'Importa ricorrenti' link in Transazioni header with | separator before [Seleziona]. Typecheck clean, 119 tests pass."
+    },
+    {
+      "id": "US-016",
+      "title": "Polish finale: spacing, animazioni, e pulizia codice",
+      "description": "As a user, I want the redesigned dashboard to feel polished with consistent spacing, smooth transitions, and no leftover dead code.",
+      "acceptanceCriteria": [
+        "Verificare e rimuovere TUTTI gli import inutilizzati nel file page.tsx (icone lucide non piu' usate, componenti rimossi, funzioni lib non piu' chiamate). Il file deve avere zero import non usati",
+        "Verificare e rimuovere TUTTE le variabili/state/funzioni non piu' referenziate dopo le rimozioni delle story precedenti. Usare il typecheck come guida: se tsc segnala unused, rimuovere",
+        "Spacing consistency: verificare che il gap tra sticky header e sezione chart sia uniforme (mt-4). Verificare che il gap tra chart e zona forms/transazioni sia mt-5. Verificare che su mobile il padding laterale sia sempre px-4",
+        "I due nuovi chart (MonthlySpendingTrendChart e MonthlyRecapChart) devono avere altezze coerenti: se affiancati su desktop, devono allinearsi in altezza. Se uno e' piu' alto dell'altro, allineare con min-h o altezza fissa",
+        "Pull-to-refresh deve continuare a funzionare: il RefreshCw icon per il pull indicator NON deve essere rimosso. Il pull-to-refresh ora ricarica loadTransactions() (senza loadWealthData che e' stato rimosso). Verificare che il callback handlePullEnd non chiami funzioni rimosse",
+        "Swipe per cambiare mese deve continuare a funzionare invariato",
+        "Verificare su mobile: il bottom padding (pb-20 da AppLayout) e' sufficiente per la bottom navbar e non copre l'ultima transazione",
+        "Verificare che la pagina non abbia scrollbar orizzontale su nessun breakpoint",
+        "npm run typecheck passa senza errori",
+        "npm test passa senza errori",
+        "Fare un build di produzione (npm run build) e verificare che non ci siano errori"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "All imports verified clean (no unused). All state/variables verified used. Spacing: mt-4 between header and charts, mt-5 between charts and content zone, px-4 consistent. Pull-to-refresh works (only loadTransactions, loadWealthData removed). Swipe navigation unchanged. npm run typecheck clean, npm test 119/119 pass, npm run build successful."
+    }
+  ]
+}

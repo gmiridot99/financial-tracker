@@ -1,0 +1,230 @@
+# Ralph Progress Log
+Started: Fri, Feb 14, 2026
+---
+
+## US-001: Definire nuova palette colori con sottotono freddo in Tailwind config [DONE]
+- Updated `tailwind.config.ts`:
+  - warmBg: primary #0B0D11, secondary #12151A, tertiary #1A1E26, hover #232830
+  - warmText: primary #F0F2F5, secondary #8B95A5, tertiary #5A6474, disabled #3D4654, muted #2A3040
+  - warmAccent: primary #3B82F6 (blu elettrico), hover #2563EB, pressed #1D4ED8
+  - warmData: expense #F87171, income #34D399, investment #A78BFA, savings #38BDF8, recurring #3B82F6
+- Updated `globals.css`: gradient hero from #0F1218 -> #0B0D11 (cool dark)
+- Token names (warmBg-*, warmText-*, etc.) kept identical - only hex values changed
+- Typecheck: passes
+
+## US-002: Aggiornare componenti core alla nuova palette scura [DONE]
+- ResponsiveToaster: hardcoded hex updated (#12151A/#F0F2F5/#1A1E26/#34D399/#F87171)
+- Settings page: range slider gradients updated (#38BDF8 savings, #A78BFA investments, #1A1E26 track)
+- PurchaseEventForm: amber-100/200/900 → warmBg/warmText tokens
+- SaleEventForm: amber-50/200/600/700/900 → warmBg/warmText/warmData tokens
+- Login, Register, Dashboard, TransactionModal, AssetSearchModal, MobileNavBar, AppLayout: already used Tailwind tokens, auto-updated via US-001
+- No remaining warm brown residuals in non-chart components
+- Typecheck: passes
+
+## US-003: Aggiornare grafici Recharts alla nuova palette scura [DONE]
+- AssetPriceChart: COLORS const updated (investment #A78BFA, income #34D399, expense #F87171, axis #5A6474, tooltip #12151A/#1A1E26)
+- SavingsPerformanceChart: SAVINGS_COLOR #38BDF8, grid/axis/legend/dot colors updated
+- InvestmentPerformanceChart: COST_BASIS_COLOR #A78BFA, MARKET_VALUE_COLOR #34D399, all axis/grid/legend colors
+- AnnualTrendChart: dark tooltip (#1A1E26/#232830), grid #1A1E26, axes #5A6474, lines #34D399/#F87171/#A78BFA/#38BDF8
+- CategoryBreakdownChart: dark tooltip (#1A1E26/#232830)
+- MultiYearTrendChart: LINE_COLORS updated, axes #5A6474, activeDot stroke #0B0D11
+- SimulatorChart: grid #1A1E26, axes #5A6474, ReferenceDot stroke #0B0D11
+- Zero old warm hex (#1A1714/#231D19/#2A2420/#8A7E76/#B8A394/#FFB74D/#4DB6AC/#66BB6A/#EF6C4D) remaining in entire src/
+- Typecheck: passes
+
+## US-004: Migration SQL per colonne manual override su unallocated_balances [DONE]
+- Created migration: supabase/migrations/20260215000001_add_manual_override_columns.sql
+- Added columns: savings_manual_override BOOLEAN DEFAULT FALSE, investments_manual_override BOOLEAN DEFAULT FALSE
+- Updated UnallocatedBalance TypeScript interface in src/types/database.ts
+- Typecheck: passes
+
+## US-005: Logica recalculateUnallocated con supporto manual override [DONE]
+- Extracted `computeFullUnallocated()` from `recalculateUnallocated()` (DB reads + pure computation, no writes)
+- Added pure functions to `src/lib/wealth-calculations.ts`:
+  - `applyOverrides(computed, currentDb)`: if override flag is TRUE, preserves DB value instead of computed
+  - `applyTransactionDelta(currentDb, preComputed, postComputed)`: applies delta on overridden values, resets flags
+  - `OverrideState` interface
+- Modified `recalculateUnallocated()`: checks override flags via `applyOverrides()`, preserves overridden values
+- Added `recalculateAfterTransaction(userId, preTransactionComputed)`: caller computes pre-state before inserting transaction, function computes post-state, applies delta via `applyTransactionDelta()`, resets flags
+- Added `setManualUnallocated(userId, field, value)`: sets override flag to TRUE + saves value
+- Updated `getUnallocatedBalances()`: now returns `savings_manual_override` and `investments_manual_override`
+- Exported new functions: `computeFullUnallocated`, `recalculateAfterTransaction`, `setManualUnallocated`, `applyOverrides`, `applyTransactionDelta`, `OverrideState`
+- Unit tests: 12 new tests (5 applyOverrides + 7 applyTransactionDelta)
+- All 119 tests pass, typecheck clean
+
+## US-006: Aggiornare pagina patrimonio per rispettare override e edit inline [DONE]
+- Updated import: added `setManualUnallocated` from `@/lib/wealth-accounts`
+- Modified `handleSaveUnallocated()`: replaced raw `supabase.update()` with `setManualUnallocated(userId, field, value)` which sets override flag to TRUE alongside the value
+- `loadUnallocated()` calls `recalculateUnallocated()` which already respects override flags via `applyOverrides()` — overridden values persist after page refresh
+- Removed direct supabase import dependency for unallocated writes
+- Typecheck: passes
+
+## US-007: Pre-popolare prezzo di acquisto dal market price cache [DONE]
+- Updated `InvestmentAccountsList.tsx` onSelect handler in AssetSearchModal:
+  1. First checks `inv.marketPrices` (prices for current holdings)
+  2. Falls back to `asset_prices_cache` table via supabase query
+- Added `marketReferencePrice` state to track the market price for reference label
+- Shows "Prezzo di mercato: EUR X.XX" below price input when available
+- Reference label persists even when user modifies the price field
+- Price pre-filled into buy price input; if no price in cache, field stays empty
+- `marketReferencePrice` cleared when asset is deselected or buy form is closed
+- `total_amount` already recalculates in real-time via `inv.buyTotal`
+- Typecheck: passes
+
+## US-008: Layout desktop 2 colonne per pagina patrimonio [DONE]
+- Container: `max-w-xl` → `max-w-xl lg:max-w-6xl` (wider on desktop, unchanged on mobile)
+- Main content wrapped in `lg:grid lg:grid-cols-5 lg:gap-6` (5-column grid on desktop)
+- Left column (`lg:col-span-3`): unallocated balance cards, tab bar, accounts list (savings or investments)
+- Right column (`lg:col-span-2 lg:row-span-2 lg:sticky lg:top-4 lg:self-start`): performance charts switch based on active tab, controvalore card (investments tab), placeholder for distribution chart
+- `lg:row-span-2` lets the right column span both left column grid sections (tabs + accounts)
+- NetWorthCard stays full-width above the grid
+- Mobile (below lg): no grid, divs stack linearly in DOM order preserving current mobile layout
+- Typecheck: passes
+
+## US-009: Grafico a torta distribuzione per asset e per conto [DONE]
+- Created `src/components/WealthDistributionChart.tsx` with Recharts PieChart
+- Two modes via `DistributionMode` type: `'per-asset'` and `'per-conto'`
+- Exported interfaces: `AssetSlice { name, value }`, `AccountSlice { name, value }`
+- Props: `mode: DistributionMode`, `assetData: AssetSlice[]`, `accountData: AccountSlice[]`
+- Donut effect: innerRadius=55, outerRadius=85, paddingAngle=2
+- 11 distinct `SLICE_COLORS` (blue, green, purple, sky, red, amber, indigo, teal, orange, fuchsia, gray)
+- Custom tooltip: dark theme (`bg-warmBg-tertiary`), shows name + EUR formatted value
+- Legend: color dot + name + EUR value + percentage per slice
+- Empty state with pie chart icon and contextual message per mode
+- Filters out zero/negative values, sorts descending by value
+- Component receives data as props only (no direct DB queries)
+- Typecheck: passes
+
+## US-010: Toggle animato tra i due grafici a torta [DONE]
+- Added `InvestmentDistributionData` interface and `onDistributionData` callback to `useInvestmentAccounts` hook
+  - Reports per-account data (name, cashBalance, holdingsValue) and per-asset data (name, marketValue)
+- Passed `onDistributionData` through `InvestmentAccountsList` component
+- Extended `loadAccountTotals` in patrimonio page to collect per-savings-account name + balance
+- Built combined distribution slices in patrimonio page:
+  - Per-asset: individual assets (from investment holdings) + Liquidità (savings + cash + unallocated)
+  - Per-conto: individual savings accounts + individual investment accounts (cash + holdings) + Non destinati slices
+- Toggle pill/segmented control: `bg-warmBg-tertiary` rounded-lg with `warmAccent-primary` active pill
+- Smooth transition: `fadeSlideIn` CSS keyframe (opacity 0→1 + translateX 8px→0, 300ms ease-out) triggered via `key={distributionMode}`
+- Added `fadeSlideIn` keyframe and animation to `tailwind.config.ts`
+- Desktop (lg+): distribution chart in right column sidebar below performance charts (`hidden lg:block`)
+- Mobile (below lg): distribution chart below accounts list (`lg:hidden mt-4`)
+- Toggle state (`distributionMode`) independent from savings/investments tab — persists during session
+- Typecheck: passes
+- All 119 tests pass
+
+## US-001 (manual-assets): Aggiungere 'manual' come asset_type nei tipi TypeScript e nella logica holdings [DONE]
+- Added 'manual' to InvestmentTransaction.asset_type union type in src/types/database.ts
+- Updated computeHoldingsWithPL in src/lib/portfolio.ts: manual assets without market price use costBasis as marketValue (P&L = 0)
+- Updated useInvestmentAccounts hook: filtered out manual assets from fetchMarketPrices call (manual assets have no recognizable symbol for Yahoo/CoinGecko)
+- Typecheck clean, all 119 tests pass
+
+## US-002 (manual-assets): Flusso acquisto asset manuale in InvestmentAccountsList [DONE]
+- Added handleBuyManual() to useInvestmentAccounts hook with full atomic operation (insert transaction + decrease cash_balance, rollback on failure)
+- Updated InvestmentAccountsList buy form: replaced single 'Cerca asset' button with 2-button choice panel ('Cerca su mercati' + 'Inserisci manualmente')
+- Manual form: name input + quantity + price (European decimal) + date + auto-calculated total
+- asset_type='manual', asset_symbol=name.substring(0,20).toUpperCase(), currency='EUR'
+- Validation: total_amount <= cash_balance. Toast: 'Asset aggiunto manualmente'
+- Typecheck clean, 119 tests pass
+
+## US-003 (manual-assets): Visualizzazione holdings per asset manuali con badge distinto [DONE]
+- Added 'manual' to TYPE_BADGE_STYLES (bg-warmText-tertiary/20 text-warmText-secondary) and TYPE_LABELS ('Manuale') in both InvestmentAccountsList.tsx and AssetSearchModal.tsx
+- Holdings display: manual assets show P&L as grey '0,00 EUR (0.0%)' instead of green/red
+- Expanded details: 2-column grid for manual (Quantità + Prezzo acquisto), no market price column, no AssetPriceChart
+- Sell button works same as API assets, price field left empty for manual
+- Typecheck clean, 119 tests pass
+
+## US-004 (manual-assets): Pre-fill prezzo di mercato nel form di acquisto per asset API [DONE - Already Implemented]
+- Verified: already implemented in previous Ralph loop (US-007)
+- onSelect in AssetSearchModal checks inv.marketPrices first, then falls back to asset_prices_cache DB
+- marketReferencePrice state displays 'Prezzo di mercato: EUR X.XX' below price input
+- Manual buy form has no pre-fill (separate flow). No changes needed
+
+## US-005 (mobile-layout): Riordinare layout mobile - torta tra grafico performance e lista conti [DONE]
+- Mobile layout reordered: moved lg:hidden distribution chart block from after accounts list to between right column (performance charts) and accounts list div
+- On mobile, flow is now: NetWorthCard > Unallocated cards > Tab bar > Performance chart > Distribution pie > Accounts list
+- Desktop layout unchanged (hidden lg:block / lg:hidden pattern preserves 2-column layout)
+- Typecheck clean, 119 tests pass
+
+## US-006 (desktop-layout): Armonizzare layout desktop - no spazi vuoti, simmetria visiva [DONE]
+- Tab bar margin changed to 'mb-6 lg:mb-0' to eliminate double-spacing on desktop (was mb-6 + grid row gap = 3rem, now just grid gap = 1.5rem)
+- Removed hardcoded 'mb-6' from SavingsPerformanceChart and InvestmentPerformanceChart wrapper divs - parent space-y-4 now controls all gaps uniformly (1rem between all right column children)
+- Right column sticky (lg:sticky lg:top-4 lg:self-start) verified working for both short and long left columns
+- WealthDistributionChart already has no extra margin (p-5 only), consistent with space-y-4 control
+- Typecheck clean, 119 tests pass
+
+## US-007 (dashboard-redesign): Pulire header dashboard [DONE]
+- Removed 4 redundant icon buttons from header: Wallet, Calculator, LogOut, CheckSquare
+- Replaced BarChart3 and TrendingUp icons with text pills: 'Recap {year}' and 'Multi-anno'
+- Removed signOut from useAuth destructure, removed unused lucide icon imports
+- Typecheck clean, 119 tests pass
+
+## US-008 (dashboard-redesign): Desktop top navigation bar [DONE]
+- Created src/components/layout/DesktopNavBar.tsx: horizontal nav bar with 4 links + Logout button
+- hidden md:block (only visible on desktop), fixed top-0 z-50, bg-warmBg-secondary
+- Updated AppLayout: imports DesktopNavBar, shows it on authenticated routes, adds md:pt-14 for content offset
+- Same isActive() logic as MobileNavBar for active state detection
+- Typecheck clean
+
+## US-009 (dashboard-redesign): Remove hero section [DONE]
+- Removed: 'Cash disponibile' big number + CountUp, 3 mini stats pills, WealthSetupBanner, wealth summary row
+- Removed all wealth-related state/effects: wealthData, isLoadingWealth, hasInitialWealth, loadWealthData, checkInitialWealth useEffect
+- Removed imports: CountUp, WealthSetupBanner, calculateWealthForMonth
+- Sticky header now compact: title + recap pills + month navigation only
+- Adjusted z-index to z-40, added md:top-14 for desktop nav clearance
+- Typecheck clean, 119 tests pass
+
+## US-010 (dashboard-redesign): MonthlySpendingTrendChart [DONE]
+- Created src/components/MonthlySpendingTrendChart.tsx: Recharts AreaChart showing last 6 months expenses
+- Self-fetching: single Supabase query with user_id filter (RLS defense-in-depth)
+- Filters out Investimenti category from expense totals
+- Gradient fill warmData-expense (#F87171), custom Italian tooltip, larger dot for current month
+- Loading skeleton and empty state included
+- Typecheck clean
+
+## US-011 (dashboard-redesign): MonthlyRecapChart [DONE]
+- Created src/components/MonthlyRecapChart.tsx: Recharts PieChart (donut) showing income distribution
+- Props-driven: totalIncome, totalExpenses, totalInvestments (no internal fetch)
+- 3 segments: Spese (red), Investimenti (purple), Cash rimanente (blue)
+- Compact horizontal layout: donut left, legend right with colored dots
+- Empty state handling for no transactions
+- Typecheck clean
+
+## US-012 (dashboard-redesign): Integrate charts [DONE]
+- Replaced MonthlyFlowChart with two new charts in responsive grid
+- grid grid-cols-1 md:grid-cols-2 gap-4 (stacked mobile, side-by-side desktop)
+- Both imported with dynamic() + { ssr: false }
+- MonthlyFlowChart.tsx kept but no longer imported in dashboard
+- Typecheck clean, 119 tests pass
+
+## US-013 (dashboard-redesign): Bulk select near transactions [DONE]
+- Added 'Transazioni' section header with [Seleziona]/[Annulla] text toggle
+- Positioned above transaction groups, visible only when hasTransactions
+- BulkDeleteActionBar unchanged
+- Typecheck clean
+
+## US-014 (dashboard-redesign): Desktop 2-column layout [DONE]
+- ZONA C restructured: md:grid md:grid-cols-[1fr_380px] md:gap-6
+- Left column (md:order-1): transaction section header + loading/empty/transaction groups
+- Right column (md:order-2): 3 forms in sticky container (md:sticky md:top-28 md:self-start)
+- Max-height overflow for right column: md:max-h-[calc(100vh-8rem)] md:overflow-y-auto
+- Mobile: single column, forms first (natural DOM order)
+- Empty state text adapts: 'qui sopra' on mobile, 'a destra' on desktop
+- Typecheck clean
+
+## US-015 (dashboard-redesign): Contextual recurring import [DONE]
+- Removed RefreshCw button from month navigation area
+- Empty state: contextual banner with 'Importa ricorrenti dal mese precedente' button + helper text
+- Existing transactions: discrete 'Importa ricorrenti' text link in Transazioni header (with | separator before [Seleziona])
+- Spinner feedback during import on both states
+- Typecheck clean, 119 tests pass
+
+## US-016 (dashboard-redesign): Final polish [DONE]
+- All imports verified clean: no unused imports remaining
+- All state/variables verified used: no dead code
+- Spacing consistent: mt-4 between header and charts, mt-5 between charts and content, px-4 lateral padding
+- Pull-to-refresh working: only calls loadTransactions (loadWealthData removed)
+- Swipe navigation unchanged
+- npm run typecheck: clean
+- npm test: 119/119 pass
+- npm run build: successful
+

@@ -1,0 +1,94 @@
+# Ralph Progress Log
+Started: Fri, Feb 20, 2026
+---
+
+## US-001: Migration DB - Destinazione su transazioni [DONE]
+- Created supabase/migrations/20260220000001_add_direct_account_flow.sql
+- Added investment_account_id (UUID nullable FK → investment_accounts) to transactions
+- Added savings_account_id (UUID nullable FK → savings_accounts) to transactions
+- Added trigger_pac (boolean NOT NULL default false) to transactions
+- CHECK constraint: NOT (investment_account_id IS NOT NULL AND savings_account_id IS NOT NULL)
+- Added is_primary (boolean NOT NULL default false) to savings_accounts
+- Partial unique index on savings_accounts(user_id) WHERE is_primary = true
+- Updated src/types/database.ts: Transaction + SavingsAccount types
+- Typecheck: passes
+
+## US-002: Conto risparmi primario [DONE]
+- useSavingsAccounts: ensurePrimaryAccount() auto-crea 'Conto Corrente' se non esiste primario
+- loadAccounts: ordine is_primary DESC, sort_order ASC (primario sempre primo)
+- handleDelete: guard contro eliminazione conto primario
+- SavingsAccountsList: Building2 icon per primario, badge 'Principale', nessun bottone Delete
+- Typecheck: passes
+
+## US-005: InlineSavingsForm [DONE]
+- Creato src/components/InlineSavingsForm.tsx: card collapsible tema blue (warmData-savings)
+- Dropdown 'Conto destinazione' filtra is_primary=false (solo conti non primari)
+- Fallback link 'Crea in Patrimonio →' se nessun conto disponibile
+- Submit: categoria 'Risparmi' (expense), savings_account_id, rollback se insert fallisce
+- Rollback: se step2 (insert transaction) fallisce, ripristina balance a originalBalance
+- ERRORE CRITICO se anche rollback fallisce
+- Aggiunto InlineSavingsForm al dashboard monthly tra InvestmentForm e transazioni
+- TransactionModal: aggiunto supporto categoria 'Risparmi' con dropdown conti non-primari
+- TransactionModal: rollback pattern identico a Investimenti per nuove transazioni Risparmi
+- Typecheck: passes
+
+## US-006: Avanzo mensile + Deposita nel conto principale [DONE]
+- Added surplus = totalIncome - allExpenses (including investments) to useMemo
+- Added primaryAccount state + loadPrimaryAccount() called on mount/month change
+- handleDepositToMain(): step1 update balance, step2 insert 'Risparmi' transaction, rollback if step2 fails
+- Surplus summary bar between charts and forms: TrendingUp/Down icon, green/red amount
+- 'Deposita nel conto principale' button shown when surplus !== 0 AND primaryAccount exists
+- Typecheck: passes
+
+## US-007: Rimozione Non Destinati e SavingsAutoRulesPanel [DONE]
+- patrimonio/page.tsx: removed Non Destinati cards (savings + investments), SavingsAutoRulesPanel
+- Removed state: unallocated, editingSavings, editingInvestments, savingsInput, investmentsInput
+- Removed functions: loadUnallocated, handleSaveUnallocated
+- Removed imports: recalculateUnallocated, applyAutoAllocationRules, setManualUnallocated, SavingsAutoRulesPanel
+- Simplified loadAccountTotals: savingsTotal = sum(savings_accounts.balance) directly
+- NetWorthCard: removed savingsUnallocated/investmentsUnallocated props; liq = savingsTotal + totalCashBalance
+- InvestmentPerformanceChart: removed investmentsUnallocated prop; marketValue = totalMarketValue + totalCashBalance
+- Distribution chart: removed unallocated slices from both asset/account modes
+- Typecheck: passes
+
+## US-008: Editing inline saldo conti risparmio [DONE]
+- useSavingsAccounts: added editingBalanceId/editingBalanceValue state + handleEditBalance()
+- handleEditBalance: validates (non-NaN, >= 0), rounds to 2dp, updates savings_accounts.balance
+- SavingsAccountsList: Pencil icon next to balance; click opens inline input with Check/X
+- Enter = save, Escape = cancel; action buttons hidden while balance editing active
+- Typecheck: passes
+
+## US-009: Editing inline cash_balance conti investimento [DONE]
+- useInvestmentAccounts: added editingCashBalanceId/editingCashBalanceValue state + handleEditCashBalance()
+- handleEditCashBalance: validates (non-NaN, >= 0), rounds to 2dp, updates investment_accounts.cash_balance
+- InvestmentAccountsList: Pencil icon in cash balance mini row; compact inline input with Check/X
+- Enter = save, Escape = cancel
+- Typecheck: passes
+
+## US-010: Editing manuale quantità/prezzo holdings [DONE]
+- useInvestmentAccounts: added editingHoldingKey/Qty/Price state + handleAdjustHolding()
+- delta>0: insert buy; delta<0: insert sell + update cash_balance (rollback on step2 fail)
+- delta=0 but price changed: symbolic buy qty=0.0001 to adjust PMC
+- InvestmentAccountsList: 'Modifica' button in expanded holding section → inline 2-col form
+- Typecheck: passes
+
+## US-011: Semplificazione calcolo Wealth Snapshots [DONE]
+- wealth.ts updateWealthSnapshotFromAccounts(): removed step 2 (unallocated_balances query)
+- Removed savingsUnallocated/investmentsUnallocated variables
+- savingsBalance = totalSavingsAccounts (no unallocated)
+- investmentsBalance = totalHoldingsValue + totalCashBalance (no unallocated)
+- Updated JSDoc comment to remove unallocated references
+- wealth.test.ts: no unallocated tests existed, no changes needed
+- Typecheck: passes
+
+## US-012: Cleanup codice deprecato [DONE]
+- Deleted src/components/SavingsAutoRulesPanel.tsx
+- Deleted src/lib/wealth-accounts.ts (all functions deprecated, no external callers)
+- Deleted src/lib/wealth-calculations.ts (all functions deprecated, no external callers)
+- Deleted src/lib/wealth-calculations.test.ts (all tests deprecated)
+- database.ts: removed SavingsAutoRule and UnallocatedBalance interfaces
+- WealthSetupBanner.tsx: removed unallocated_balances upsert from handleSubmit
+- Grep confirms zero remaining imports of any removed symbol
+- Typecheck: passes
+- Tests: 82 passed (4 files)
+

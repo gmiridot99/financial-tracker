@@ -1,0 +1,25 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Skill(hookify:list)",
+      "Skill(hookify:list:*)",
+      "Skill(ralph-loop:cancel-ralph)",
+      "Skill(ralph-loop:cancel-ralph:*)",
+      "Bash(wc -l \"/c/dev/1. Financial tracker/financial-tracker/src/lib\"/*.ts)",
+      "Bash(find src/components -name \"*.tsx\" -type f -exec wc -l {} +)",
+      "Bash(find src/hooks -name \"*.ts\" -type f -exec wc -l {} +)",
+      "Bash(find src/lib -name \"*.ts\" -type f -exec wc -l {} +)",
+      "Bash(xargs grep -l \"console.log\")",
+      "Bash(find src -name \"*.tsx\" -exec grep -l \"loading\\\\|isLoading\" {} ;)",
+      "Bash(grep -n \"BulkDeleteActionBar\" src/app/dashboard/[year]/[month]/page.tsx)"
+    ],
+    "additionalDirectories": [
+      "C:\\dev\\1. Financial tracker\\financial-tracker\\.claude",
+      "c:\\dev\\1. Financial tracker\\financial-tracker\\.claude"
+    ]
+  }
+}

@@ -1,0 +1,242 @@
+{
+  "project": "Financial Life Planner",
+  "branchName": "ralph/direct-account-flow",
+  "description": "Flusso Diretto Dashboard - Conti Patrimonio: sostituisce il sistema 'Non Destinati' con collegamento diretto transazioni → conti patrimonio. Ogni investimento/risparmio dalla dashboard va a un conto specifico. L'avanzo mensile confluisce nel conto risparmi primario.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Migration DB: colonne destinazione su transactions e is_primary su savings_accounts",
+      "description": "As a system, I need new columns linking transactions to specific patrimonio accounts, so money flows can be tracked directly.",
+      "acceptanceCriteria": [
+        "Nuovo file migration in supabase/migrations/ (nome: 20260220000001_add_direct_account_flow.sql)",
+        "Aggiunta colonna investment_account_id (UUID, nullable, FK → investment_accounts) sulla tabella transactions",
+        "Aggiunta colonna savings_account_id (UUID, nullable, FK → savings_accounts) sulla tabella transactions",
+        "Aggiunta colonna trigger_pac (boolean, default false, NOT NULL) sulla tabella transactions",
+        "Constraint CHECK: investment_account_id e savings_account_id NON possono essere entrambi NOT NULL (al massimo uno dei due)",
+        "Aggiunta colonna is_primary (boolean, default false, NOT NULL) sulla tabella savings_accounts",
+        "Partial unique index: CREATE UNIQUE INDEX ON savings_accounts (user_id) WHERE is_primary = true (al massimo un conto primario per utente)",
+        "In src/types/database.ts: aggiornare Transaction type con investment_account_id (string | null), savings_account_id (string | null), trigger_pac (boolean)",
+        "In src/types/database.ts: aggiornare SavingsAccount type con is_primary (boolean)",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Created supabase/migrations/20260220000001_add_direct_account_flow.sql: added investment_account_id (UUID nullable FK), savings_account_id (UUID nullable FK), trigger_pac (boolean NOT NULL default false) to transactions. Added CHECK constraint (not both account IDs set). Added is_primary (boolean NOT NULL default false) to savings_accounts. Added partial unique index on savings_accounts(user_id) WHERE is_primary=true. Updated src/types/database.ts: Transaction now has investment_account_id, savings_account_id, trigger_pac; SavingsAccount now has is_primary. Typecheck clean."
+    },
+    {
+      "id": "US-002",
+      "title": "Conto risparmi primario: auto-creazione e distinzione visiva nella pagina patrimonio",
+      "description": "As a user, I want a primary savings account (Conto Corrente) that is always visible at the top of my savings list, clearly distinguished from other accounts.",
+      "acceptanceCriteria": [
+        "In src/app/dashboard/patrimonio/page.tsx (o equivalente): al caricamento della pagina, se non esiste nessun savings_account con is_primary=true per l'utente, crearne uno automaticamente con nome 'Conto Corrente', balance=0, is_primary=true",
+        "Il conto primario appare SEMPRE in cima alla lista risparmi (ordinato prima degli altri indipendentemente dall'ordine di creazione)",
+        "Il conto primario mostra un badge 'Principale' (testo piccolo, colore warmData-savings o warmAccent) accanto al nome",
+        "Il conto primario mostra un'icona banca (Building2 da lucide-react) invece dell'icona default",
+        "Il bottone 'Elimina' NON appare sul conto primario",
+        "Il conto primario PUO' essere rinominato (campo nome editabile, stessa UX degli altri conti)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "useSavingsAccounts: added ensurePrimaryAccount() that auto-creates 'Conto Corrente' (is_primary=true, balance=0) if no primary exists; called before loadAccounts on init. loadAccounts now orders by is_primary DESC first. handleDelete guards against deleting primary account. SavingsAccountsList: imported Building2, primary accounts use Building2 icon, show 'Principale' badge, Delete button hidden for primary. Typecheck clean."
+    },
+    {
+      "id": "US-003",
+      "title": "InvestmentForm: dropdown conto destinazione obbligatorio con deposito diretto e rollback",
+      "description": "As a user, when I record an investment from the monthly dashboard, I want to choose which investment account receives the money, so the deposit happens directly.",
+      "acceptanceCriteria": [
+        "In src/components/InvestmentForm.tsx (o nel hook che lo gestisce): aggiungere uno stato selectedInvestmentAccountId (string | null)",
+        "Aggiungere un dropdown '<select>' con label 'Conto destinazione' che carica i conti investimento dell'utente da Supabase (query investment_accounts WHERE user_id = user.id)",
+        "Il dropdown è obbligatorio: se nessun conto è selezionato, il submit è bloccato (button disabled)",
+        "Se non ci sono conti investimento: mostrare nel dropdown un'opzione disabilitata 'Nessun conto — Crea in Patrimonio' con link <a> a /dashboard/patrimonio",
+        "Al submit: inserire la transazione con investment_account_id = selectedInvestmentAccountId",
+        "Al submit (rollback pattern): salvare originalCashBalance del conto, incrementare cash_balance del conto di amount, se l'insert transazione fallisce → rollback cash_balance al valore originale + toast.error",
+        "Se il rollback stesso fallisce: toast.error('ERRORE CRITICO: saldo non sincronizzato')",
+        "In src/components/TransactionModal.tsx: quando la categoria selezionata è 'Investimenti', mostrare lo stesso dropdown conto destinazione (stessa logica, stesso required)",
+        "Stile dropdown: coerente con gli altri select del form (h-11 rounded-xl bg-warmBg-tertiary)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "InvestmentForm: loads investment_accounts on expand, required dropdown 'Conto destinazione', no-accounts link to /dashboard/patrimonio, submit disabled if no account. Step1: update cash_balance, Step2: insert transaction with investment_account_id. Rollback step1 if step2 fails. TransactionModal: added investmentAccounts state, shows account dropdown when category='Investimenti', same rollback pattern for new transactions. Typecheck clean."
+    },
+    {
+      "id": "US-004",
+      "title": "Collegamento PAC opzionale per investimenti ricorrenti",
+      "description": "As a user, when I record a recurring investment linked to an account that has PAC rules, I want to optionally trigger the PAC auto-investment after the deposit.",
+      "acceptanceCriteria": [
+        "In InvestmentForm.tsx: il blocco PAC è visibile SOLO se la transazione è ricorrente (is_recurring=true) E un conto è selezionato (selectedInvestmentAccountId !== null)",
+        "Se il conto selezionato ha PAC rules attive (controllare pac_rules table WHERE investment_account_id = selected AND is_active = true): mostrare checkbox 'Attiva PAC automatico al deposito'",
+        "Se il conto NON ha PAC rules: non mostrare l'opzione PAC",
+        "Se checkbox attiva: salvare la transazione con trigger_pac = true",
+        "Dopo il deposito cash (incremento cash_balance), se trigger_pac=true: chiamare executePacRules() da src/lib/pac-execution.ts per il conto selezionato",
+        "Se trigger_pac=false o transazione non ricorrente: solo deposito cash, nessun auto-buy",
+        "Toast di conferma distingue: 'Investimento registrato' vs 'Investimento registrato + PAC eseguito (N asset)'",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "InvestmentForm: added pacRules state, useEffect loads active PAC rules when isRecurring+account selected. showPacOption = isRecurring && accountSelected && pacRules.length > 0. Checkbox 'Attiva PAC automatico' visible only when showPacOption. On submit: trigger_pac=triggerPac saved in transaction, then if triggerPac=true execute executePac(). Toast distinguishes PAC executed vs not. Typecheck clean."
+    },
+    {
+      "id": "US-005",
+      "title": "InlineSavingsForm: nuovo form risparmio con conto destinazione e deposito diretto",
+      "description": "As a user, when I record a saving from the monthly dashboard, I want to choose which savings account (excluding primary) receives the money.",
+      "acceptanceCriteria": [
+        "Creare src/components/InlineSavingsForm.tsx: card collapsible con tema blue (warmData-savings), stile simile a InvestmentForm",
+        "Il form ha: campo importo (numeric, European decimal), campo data (default oggi), dropdown 'Conto destinazione' (savings accounts escluso il primario), campo note opzionale",
+        "Verificare se la categoria 'Risparmi' esiste già nelle categorie default. Se non esiste, il form deve crearla o usare una categoria esistente appropriata",
+        "Il dropdown conto destinazione esclude il conto primario (filtro is_primary=false)",
+        "Il dropdown è obbligatorio; se nessun conto non-primario esiste: mostrare link 'Nessun conto — Crea in Patrimonio →'",
+        "Al submit: inserire transazione di tipo expense con categoria 'Risparmi' e savings_account_id = selected account",
+        "Rollback pattern: salvare originalBalance, incrementare savings_accounts.balance del conto, se insert transazione fallisce → rollback balance + toast.error",
+        "In src/components/TransactionModal.tsx: quando categoria è 'Risparmi', mostrare dropdown conto destinazione (conti savings non-primari)",
+        "Il form InlineSavingsForm appare nella dashboard mensile tra InvestmentForm e le transazioni esistenti",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Created InlineSavingsForm.tsx: blue theme, savings accounts dropdown (is_primary=false only), rollback pattern (step1: update balance, step2: insert transaction, rollback step1 if step2 fails). Added to dashboard monthly page after InvestmentForm. TransactionModal: added savingsAccounts state + loadSavingsAccounts(), isRisparmiCategory computed, savings account dropdown when Risparmi selected, rollback pattern for new Risparmi transactions. Typecheck clean."
+    },
+    {
+      "id": "US-006",
+      "title": "Calcolo e visualizzazione avanzo mensile con azione 'Chiudi mese'",
+      "description": "As a user, I want to see my monthly surplus (income minus all expenses including explicit investments and savings) and manually trigger its deposit into my primary savings account.",
+      "acceptanceCriteria": [
+        "In src/app/dashboard/[year]/[month]/page.tsx: calcolare avanzo = totalIncome - totalExpenses (dove totalExpenses include già le transazioni investimento e risparmio esplicite che sono expense-type)",
+        "Mostrare l'avanzo nel riepilogo della dashboard: riga 'Avanzo mese: +X.XXX,XX EUR' (verde se positivo, rosso se negativo) nel blocco summary sotto i chart",
+        "Aggiungere bottone 'Deposita nel conto principale' (o 'Chiudi mese') visibile solo se: avanzo !== 0 E esiste un conto primario",
+        "Click sul bottone: creare una transazione di tipo expense con categoria 'Risparmi', savings_account_id = primary account id, importo = |avanzo|, note = 'Avanzo mese {MESE} {ANNO}'",
+        "Se avanzo positivo: incrementare balance del conto primario di avanzo",
+        "Se avanzo negativo: decrementare balance del conto primario di |avanzo| (l'utente ha speso più di quanto guadagnato)",
+        "Rollback pattern obbligatorio per l'update del balance",
+        "Dopo il deposito: toast di conferma 'Avanzo depositato nel conto principale' + ricaricare le transazioni",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Added surplus calc to useMemo: surplus = totalIncome - (recurringExpenses + oneTimeExpenses + investments). Added primaryAccount state + loadPrimaryAccount(). Added handleDepositToMain() with rollback pattern. Added ZONA B.5 surplus summary bar (between charts and forms) showing TrendingUp/Down icon, amount colored green/red, 'Deposita nel conto principale' button visible only when surplus !== 0 AND primaryAccount exists. Typecheck clean."
+    },
+    {
+      "id": "US-007",
+      "title": "Rimozione 'Non Destinati' e SavingsAutoRulesPanel dalla pagina patrimonio",
+      "description": "As a user, the patrimonio page should no longer show 'Non Destinati' cards or auto-allocation rules, since money flows are now direct.",
+      "acceptanceCriteria": [
+        "In src/app/dashboard/patrimonio/page.tsx: rimuovere le card 'Non Destinati Investimenti' e 'Non Destinati Risparmi' (e i loro stati/render)",
+        "Rimuovere il componente SavingsAutoRulesPanel dalla pagina patrimonio",
+        "Rimuovere import di recalculateUnallocated, applyAutoAllocationRules, setManualUnallocated dalla pagina",
+        "Rimuovere lo stato unallocated (e i relativi handler di editing) dalla pagina",
+        "La pagina carica i conti direttamente (investment_accounts + savings_accounts) senza passare per il ricalcolo unallocated",
+        "NetWorthCard: aggiornare il calcolo del patrimonio totale per derivare dai saldi dei conti (senza unallocated): investments_total = sum(cash_balance) + holdings_market_value, savings_total = sum(savings_accounts.balance)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Removed Non Destinati cards, SavingsAutoRulesPanel, unallocated state/functions from patrimonio/page.tsx. Simplified loadAccountTotals to sum savings_accounts.balance directly. Removed savingsUnallocated/investmentsUnallocated props from NetWorthCard (liquidity = savingsTotal + totalCashBalance). Removed investmentsUnallocated prop from InvestmentPerformanceChart (marketValue = totalMarketValue + totalCashBalance). Removed unallocated slices from distribution chart. Typecheck clean."
+    },
+    {
+      "id": "US-008",
+      "title": "Editing manuale inline del saldo per tutti i conti risparmio",
+      "description": "As a user, I want to manually edit the balance of any savings account directly in the patrimonio section, to correct errors or align data.",
+      "acceptanceCriteria": [
+        "In src/components/SavingsAccountsList.tsx (o nel hook useSavingsAccounts): ogni conto risparmio mostra un'icona matita (Pencil da lucide-react) accanto al saldo",
+        "Click sulla matita: il saldo diventa un input inline (text input, text-right, width adattato al valore)",
+        "Tasto Invio o click checkmark (Check icon): salva il nuovo valore",
+        "Tasto Escape o click X (X icon): annulla senza salvare",
+        "Accetta sia virgola che punto come separatore decimale (usare parseEuropeanDecimal già presente nel codebase)",
+        "Il salvataggio aggiorna savings_accounts.balance nel DB (UPDATE WHERE id = account.id AND user_id = user.id)",
+        "Toast di conferma 'Saldo aggiornato' o toast.error in caso di errore",
+        "Validazione: il nuovo valore deve essere un numero valido (non NaN, non negativo)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "useSavingsAccounts: added editingBalanceId, editingBalanceValue state + handleEditBalance() that validates (non-NaN, >= 0), rounds to 2dp, updates savings_accounts.balance in DB, toasts success/error. SavingsAccountsList: Pencil icon next to balance amount; click opens inline input (text-right, bold, inputMode=decimal) with Check/X buttons; Enter saves, Escape cancels. Action buttons hidden while editingBalanceId active. Typecheck clean."
+    },
+    {
+      "id": "US-009",
+      "title": "Editing manuale inline del cash_balance per i conti investimento",
+      "description": "As a user, I want to manually edit the cash balance of any investment account to correct errors.",
+      "acceptanceCriteria": [
+        "In src/components/InvestmentAccountsList.tsx (o nel hook useInvestmentAccounts): ogni conto investimento mostra un'icona matita (Pencil) accanto al cash_balance",
+        "Click sulla matita: cash_balance diventa un input inline (stessa UX di US-008 per i risparmi)",
+        "Tasto Invio o checkmark: salva il nuovo valore",
+        "Escape o X: annulla",
+        "Accetta sia virgola che punto come separatore decimale",
+        "Il salvataggio aggiorna investment_accounts.cash_balance nel DB (UPDATE WHERE id = account.id AND user_id = user.id)",
+        "Toast di conferma 'Cash balance aggiornato' o toast.error",
+        "Validazione: valore numerico valido (non NaN, non negativo)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "useInvestmentAccounts: added editingCashBalanceId, editingCashBalanceValue state + handleEditCashBalance() that validates (non-NaN, >= 0), rounds to 2dp, updates investment_accounts.cash_balance in DB, toasts success/error. InvestmentAccountsList: Pencil icon in cash balance mini row; click opens compact inline input (w-28, text-right, xs bold) with Check/X buttons; Enter saves, Escape cancels. Typecheck clean."
+    },
+    {
+      "id": "US-010",
+      "title": "Editing manuale quantità e prezzo asset nelle holdings dei conti investimento",
+      "description": "As a user, I want to manually edit asset quantities and average purchase price in my investment accounts, with adjustment transactions created for audit trail.",
+      "acceptanceCriteria": [
+        "In src/components/InvestmentAccountsList.tsx: ogni holding nella lista mostra un bottone 'Modifica' (icona Edit o testo 'Modifica', testo xs)",
+        "Click 'Modifica': mostrare un form inline (o mini-modal) con: campo quantità (pre-compilato con quantità attuale), campo prezzo medio di acquisto (pre-compilato), bottone Salva e Annulla",
+        "Validazione: quantità >= 0, prezzo > 0",
+        "Logica di aggiustamento: calcolare delta_qty = nuova_qty - vecchia_qty",
+        "Se delta_qty > 0: creare investment_transaction di tipo 'buy' con asset_symbol, asset_name, quantity=delta_qty, price=nuovo_prezzo_medio, total_amount=delta_qty*nuovo_prezzo, account_id, user_id",
+        "Se delta_qty < 0: creare investment_transaction di tipo 'sell' con quantity=|delta_qty|, price=nuovo_prezzo_medio",
+        "Se delta_qty = 0 ma prezzo diverso: aggiornare direttamente il prezzo medio nella transazione originale (o creare una transazione di aggiustamento simbolica con qty=0.0001)",
+        "Toast di conferma con dettaglio: 'Aggiustamento: +2 VWCE a €X.XX' o 'Rettifica prezzo medio VWCE'",
+        "L'holding si aggiorna immediatamente nella UI dopo il salvataggio",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "useInvestmentAccounts: added editingHoldingKey/Qty/Price state + handleAdjustHolding(). Logic: delta>0 → buy insert; delta<0 → sell insert + cash_balance update with rollback; delta=0 but price changed → symbolic buy (qty=0.0001). Toast shows adjustment detail. InvestmentAccountsList: 'Modifica' button in expanded holding (shows when NOT in adjustment mode); click opens inline 2-col form (qty + avg price) with Salva/X. Typecheck clean."
+    },
+    {
+      "id": "US-011",
+      "title": "Semplificazione calcolo Wealth Snapshots: derivati dai saldi conti",
+      "description": "As a system, wealth snapshots must derive directly from account balances, without passing through unallocated buffers.",
+      "acceptanceCriteria": [
+        "In src/lib/wealth.ts: aggiornare updateWealthSnapshotFromAccounts() (o funzione equivalente) per calcolare: investments_balance = sum(investment_accounts.cash_balance) + sum(holdings market value calcolato dai prezzi), savings_balance = sum(savings_accounts.balance)",
+        "Rimuovere qualsiasi riferimento a unallocated_balances nel calcolo dei wealth snapshots",
+        "La funzione NON deve più fare query su unallocated_balances per wealth snapshot calculation",
+        "Aggiornare i test in src/lib/wealth.test.ts: rimuovere test che dipendono da unallocated, aggiungere/aggiornare test per il nuovo calcolo basato sui saldi conti",
+        "Aggiornare src/lib/wealth-calculations.ts (se applicabile) per rimuovere computeUnallocated dal flusso snapshot",
+        "I wealth snapshots esistenti in DB restano validi (backward compatibility: i nuovi snapshot sovrascriveranno con il calcolo corretto al prossimo aggiornamento)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "wealth.ts updateWealthSnapshotFromAccounts(): removed step 2 (unallocated_balances query), removed savingsUnallocated/investmentsUnallocated variables. Step 8 now: savingsBalance = totalSavingsAccounts; investmentsBalance = totalHoldingsValue + totalCashBalance. Updated JSDoc comment. wealth.test.ts had no unallocated tests, no changes needed there. Typecheck clean."
+    },
+    {
+      "id": "US-012",
+      "title": "Cleanup codice deprecato: rimozione Non Destinati, Auto-Rules e unallocated",
+      "description": "As a developer, I need to remove all deprecated code related to unallocated buffers and auto-allocation rules.",
+      "acceptanceCriteria": [
+        "Eliminare il file src/components/SavingsAutoRulesPanel.tsx (se non già rimosso da US-007)",
+        "Da src/lib/wealth-accounts.ts: rimuovere le funzioni executeAutoAllocation, applyAutoAllocationRules, setManualUnallocated, recalculateUnallocated, computeFullUnallocated, applyNegativeMonthDeduction",
+        "Da src/lib/wealth-calculations.ts: rimuovere le funzioni computeUnallocated, computeAutoAllocation, computeNegativeMonthDeduction, applyOverrides, applyTransactionDelta (se non usate altrove)",
+        "Da src/lib/wealth-calculations.test.ts: rimuovere tutti i test relativi alle funzioni rimosse",
+        "Da src/types/database.ts: rimuovere (o marcare come deprecated con commento) i tipi SavingsAutoRule, UnallocatedBalance",
+        "Verificare con grep che nessun file importi più le funzioni rimosse",
+        "Aggiornare src/components/WealthSetupBanner.tsx: cambiare il messaggio di onboarding da 'Configura la destinazione dei tuoi risparmi' a 'Crea il tuo primo conto' (o rimuovere il banner se non più necessario dopo US-002 auto-crea il conto primario)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Deleted SavingsAutoRulesPanel.tsx, wealth-accounts.ts (entirely deprecated), wealth-calculations.ts (entirely deprecated), wealth-calculations.test.ts (all tests deprecated). Removed SavingsAutoRule and UnallocatedBalance interfaces from database.ts. WealthSetupBanner.tsx: removed unallocated_balances upsert from handleSubmit. Grep confirms zero remaining imports of deleted modules. Typecheck clean, all 82 tests pass."
+    }
+  ]
+}

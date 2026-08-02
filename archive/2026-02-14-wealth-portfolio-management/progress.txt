@@ -1,0 +1,184 @@
+# Ralph Progress Log
+Started: Fri, Feb 06, 2026
+---
+
+## US-001: Create savings-related database tables and TypeScript types [DONE]
+- Created migration `supabase/migrations/20260206000001_create_savings_accounts.sql`
+  - savings_accounts table (id, user_id, name, balance, created_at, sort_order)
+  - savings_auto_rules table (id, user_id, savings_account_id, percentage, is_active, created_at)
+  - savings_transfers table (id, user_id, from_account_id, to_account_id, amount, note, created_at)
+  - RLS policies (SELECT/INSERT/UPDATE/DELETE) on all three tables
+  - Indexes on user_id for all tables + savings_account_id for auto_rules
+- Added TypeScript interfaces to `src/types/database.ts`: SavingsAccount, SavingsAutoRule, SavingsTransfer
+- Typecheck: passes (pre-existing error in simulator.test.ts unrelated)
+
+## US-002: Create investment-related database tables and TypeScript types [DONE]
+- Created migration `supabase/migrations/20260206000002_create_investment_accounts.sql`
+  - investment_accounts table (id, user_id, name, cash_balance, created_at, sort_order)
+  - investment_transactions table (id, user_id, investment_account_id, asset_symbol, asset_name, asset_type, transaction_type, quantity, price_per_unit, total_amount, currency, transaction_date, created_at)
+  - asset_prices_cache table (id, symbol, asset_type, current_price, price_currency, last_updated)
+  - RLS policies on all three tables (asset_prices_cache readable by all authenticated users)
+  - Indexes on user_id and investment_account_id
+- Added TypeScript interfaces to `src/types/database.ts`: InvestmentAccount, InvestmentTransaction, AssetPriceCache
+- Typecheck: passes
+
+## US-003: Create unallocated balances table and recalculation utility [DONE]
+- Created migration `supabase/migrations/20260206000003_create_unallocated_balances.sql`
+  - unallocated_balances table (id, user_id UNIQUE, savings_unallocated, investments_unallocated, last_auto_applied, updated_at)
+  - RLS policies, index, updated_at trigger
+- Added UnallocatedBalance interface to `src/types/database.ts`
+- Created `src/lib/wealth-calculations.ts` with pure `computeUnallocated()` function (testable without DB)
+- Created `src/lib/wealth-accounts.ts` with `recalculateUnallocated()` (DB wrapper) and `getUnallocatedBalances()`
+- Tests: 8/8 pass in `src/lib/wealth-calculations.test.ts`
+- Updated vitest 1.6.1 -> 3.2.4 for Node v24 compatibility
+- Typecheck: passes
+
+## US-004: Create patrimonio page layout with unallocated display and tabs [DONE]
+- Created `src/app/dashboard/patrimonio/page.tsx`
+  - Auth-protected (redirects to /login if unauthenticated)
+  - Header with back button (ChevronLeft) linking to /dashboard
+  - Two unallocated balance cards: Risparmi (blue/savings) and Investimenti (purple/investment)
+  - Tab bar: Risparmi / Investimenti (client-side state, no page reload)
+  - Placeholder content per tab
+  - Loading spinner while fetching unallocated balances
+  - Uses warm theme tokens
+- Added Wallet icon navigation link in monthly dashboard header
+- Typecheck: passes
+
+## US-005: Create and manage savings accounts [DONE]
+- Created `src/components/SavingsAccountsList.tsx` with full CRUD
+  - Create: inline form with name input, Salva/Annulla buttons
+  - Edit name: pencil icon, inline editing on Enter/blur
+  - Delete: trash icon only if balance === 0, else toast warning
+  - Empty state: 'Nessun conto risparmio. Crea il primo!'
+- Integrated into patrimonio page Risparmi tab
+
+## US-006: Manual allocation from unallocated to savings accounts [DONE]
+- Added 'Deposita' button (ArrowDownToLine) per account card
+- Inline amount input with European decimal support
+- Validates amount > 0 and <= savings_unallocated
+- Updates unallocated_balances and savings_account.balance
+- Creates savings_transfers record (from_account_id = NULL)
+- Toast: 'Depositati X.XX in [name]'
+
+## US-007: Transfer between savings accounts and back to Non destinati [DONE]
+- Added 'Trasferisci' button (ArrowLeftRight) per account card
+- Amount input + destination dropdown (other accounts + Non destinati)
+- Validates amount > 0, <= source balance
+- Updates balances: source decreases, destination increases (or unallocated)
+- Creates savings_transfers record with correct from/to
+- Toast: 'Trasferiti X.XX da [source] a [destination]'
+
+## US-008: Auto-allocation rules UI for savings [DONE]
+- Created `src/components/SavingsAutoRulesPanel.tsx`
+- Per-account percentage inputs with on/off toggles
+- Sum validation (active percentages <= 100%)
+- "Rimane in Non destinati: X%" display
+- Save and "Applica ora" buttons
+- Integrated into patrimonio page Risparmi tab
+
+## US-009: Auto-apply savings rules on page load [DONE]
+- Pure function `computeAutoAllocation(savingsUnallocated, rules)` in `src/lib/wealth-calculations.ts`
+  - Filters active rules, validates total <= 100%, distributes proportionally
+  - Rounds to 2 decimal places
+- DB function `applyAutoAllocationRules(userId)` in `src/lib/wealth-accounts.ts`
+  - Checks savings_unallocated > 0 and last_auto_applied is null or > 1 month old
+  - Queries active rules, computes distributions, updates account balances
+  - Creates savings_transfers records with note 'Auto-allocazione'
+  - Updates unallocated balance and last_auto_applied timestamp
+- Integrated into patrimonio page: called after recalculateUnallocated(), re-fetches if applied
+- Tests: 8 new tests for computeAutoAllocation (16 total), all pass
+- Typecheck: passes (pre-existing simulator.test.ts error only)
+
+## US-010: Negative month proportional deduction from savings [DONE]
+- Pure function `computeNegativeMonthDeduction(input)` in `src/lib/wealth-calculations.ts`
+  - Proportional deduction: deficit * (balance / totalSavings) per account
+  - If total savings < deficit: drains all accounts, remainder from unallocated
+  - Handles zero-balance accounts (skipped), single account, no accounts
+- DB function `applyNegativeMonthDeduction(userId, year, month, deficit)` in `src/lib/wealth-accounts.ts`
+  - Queries savings accounts, computes deductions, updates balances
+  - Creates savings_transfers: from_account_id = account, to_account_id = NULL
+  - Note: 'Deduzione mese negativo MM/YYYY'
+  - Reduces savings_unallocated by remainder if deficit > total account balances
+- Tests: 6 new tests for computeNegativeMonthDeduction (22 total), all pass
+- Typecheck: passes
+
+## US-011: Create and manage investment accounts [DONE]
+- Created `src/components/InvestmentAccountsList.tsx` with full CRUD
+  - Create: inline form with name input, Salva/Annulla buttons
+  - Edit name: pencil icon, inline editing on Enter/blur
+  - Delete: trash icon only if cash_balance === 0 AND no investment_transactions exist
+  - Empty state: 'Nessun conto investimento. Crea il primo!'
+  - Card shows: name (editable), cash balance (Liquidità), holdings placeholder, total value placeholder
+- Integrated into patrimonio page Investimenti tab (replaced placeholder)
+- Typecheck: passes
+
+## US-012: Manual allocation from unallocated to investment accounts [DONE]
+- Deposit button (ArrowDownToLine) per investment account card
+- Inline amount input with European decimal support
+- Validates amount > 0 and <= investments_unallocated
+- Updates unallocated_balances.investments_unallocated and investment_account.cash_balance
+- Toast: 'Depositati X.XX in [name]'
+- Typecheck: passes
+
+## US-013: Transfer cash between investment accounts and to savings [DONE]
+- Added 'Trasferisci' button (ArrowLeftRight) per investment account card
+- Amount input + destination dropdown: other investment accounts, Non destinati Investimenti, Non destinati Risparmi
+- Cross-pool transfer: investment → savings unallocated (increases savings_unallocated)
+- Validates amount > 0, <= source account cash_balance
+- All balances update immediately
+- Toast: 'Trasferiti X.XX da [source] a [destination]'
+- Typecheck: passes
+
+## US-014: Yahoo Finance asset search API route [DONE]
+- Created `src/app/api/assets/search/route.ts`
+- Uses yahoo-finance2 v3 (instantiate with `new YahooFinance()`)
+- Maps quoteType → stock/etf/bond/commodity/crypto
+- Filters to Yahoo Finance results only, max 20
+- Returns 500 with { error: 'Errore nella ricerca' } on failure
+- Typecheck: passes
+
+## US-015: CoinGecko crypto search API route [DONE]
+- Created `src/app/api/assets/search-crypto/route.ts`
+- Calls CoinGecko free API: /api/v3/search?query=QUERY
+- Maps coins to { symbol (uppercase), name, type: 'crypto', coingecko_id, thumb }
+- Handles 429 rate limiting with Retry-After header
+- Typecheck: passes
+
+## US-016: Unified asset search modal component [DONE]
+- Created `src/components/AssetSearchModal.tsx`
+- Search input debounced at 300ms
+- Parallel calls to /api/assets/search and /api/assets/search-crypto via Promise.all
+- Type badges: blue Stock, green ETF, orange Crypto, gray Bond, brown Commodity
+- Loading spinner, empty state, click-outside-to-close
+- Responsive: full-screen mobile, centered modal desktop (max-w-lg)
+- Typecheck: passes
+
+## US-017: Buy asset form within investment account [DONE]
+- Added 'Compra' button (ShoppingCart) per investment account card
+- Opens AssetSearchModal to select asset
+- Buy form: symbol+name (read-only), quantity (8 decimals), price per unit, auto-calculated total, date picker
+- European decimal support on quantity and price inputs
+- Validates: qty > 0, price > 0, total <= cash_balance
+- Inserts investment_transactions (type='buy'), decreases cash_balance
+- Toast: 'Acquistati [qty] [symbol] a [price]/unità'
+- Typecheck: passes
+
+## US-018: Holdings display with positions per investment account [DONE]
+- Created `src/lib/portfolio.ts` with `computeHoldings(transactions)` utility
+  - Groups by asset_symbol, sums buy qty - sell qty, weighted avg price
+  - Returns holdings with symbol, name, type, quantity, avgPrice, costBasis
+- Holdings displayed per investment account card: type badge, symbol, name, qty, avg buy price
+- Account total shows sum of cost basis
+- Empty state: 'Nessun asset in portafoglio'
+- Typecheck: passes
+
+## US-019: Sell asset form with destination choice [DONE]
+- Each holding row has 'Vendi' button
+- Sell form: max quantity, qty input, price input, destination dropdown
+  - Cash nel conto (default), Non destinati Investimenti, Non destinati Risparmi
+- Inserts investment_transactions (type='sell')
+- Routes proceeds to selected destination
+- Calculates realized P&L: (sell_price - avg_buy_price) * sell_qty
+- Toast: 'Venduti [qty] [symbol] - P&L: +X.XX / -X.XX'
+- Typecheck: passes
