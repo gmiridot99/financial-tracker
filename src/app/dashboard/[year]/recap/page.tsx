@@ -6,6 +6,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, ArrowLeft, TrendingUp, Wallet, RefreshCw, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { calculateWealthForYear } from '@/lib/wealth';
+import { computeWealthPeriodSummary } from '@/hooks/recap/wealthPeriodSummary';
 import dynamic from 'next/dynamic';
 import type { MonthlyData } from '@/components/AnnualTrendChart';
 import type { AnnualInsightsData } from '@/components/AnnualInsights';
@@ -410,12 +411,14 @@ export default function RecapPage() {
   const hasMultiYearExpenses = multiYearCategoryData.length > 0 && hasMultiYearData;
 
   // Calculate wealth summary for the year
-  const startYearWealth = monthlyWealth[0] || { investments: 0, savings: 0 };
-  const endYearWealth = monthlyWealth[11] || { investments: 0, savings: 0 };
-  const totalStartWealth = startYearWealth.investments + startYearWealth.savings;
-  const totalEndWealth = endYearWealth.investments + endYearWealth.savings;
-  const wealthDelta = totalEndWealth - totalStartWealth;
-  const wealthGrowthPercent = totalStartWealth > 0 ? (wealthDelta / totalStartWealth) * 100 : 0;
+  const {
+    startWealth: startYearWealth,
+    endWealth: endYearWealth,
+    totalStart: totalStartWealth,
+    totalEnd: totalEndWealth,
+    delta: wealthDelta,
+    growthPercent: wealthGrowthPercent,
+  } = computeWealthPeriodSummary(monthlyWealth);
   const hasWealthData = monthlyWealth.some(w => w.investments > 0 || w.savings > 0);
 
   return (

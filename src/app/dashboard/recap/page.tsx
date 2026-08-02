@@ -15,6 +15,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { calculateWealthForYears } from '@/lib/wealth';
+import { computeWealthPeriodSummary } from '@/hooks/recap/wealthPeriodSummary';
 import { supabase } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
 import type { YearlyDataPoint } from '@/components/MultiYearTrendChart';
@@ -601,13 +602,9 @@ function RecapMultiAnnoContent() {
         }
 
         const summaries: YearWealthSummary[] = years.map((y) => {
-          const monthlyData = resolvedWealthMap.get(y) || Array.from({ length: 12 }, () => ({ investments: 0, savings: 0 }));
-          const startWealth = monthlyData[0];
-          const endWealth = monthlyData[11];
-          const totalStart = startWealth.investments + startWealth.savings;
-          const totalEnd = endWealth.investments + endWealth.savings;
-          const delta = totalEnd - totalStart;
-          const growthPercent = totalStart > 0 ? (delta / totalStart) * 100 : 0;
+          const monthlyData = resolvedWealthMap.get(y);
+          const { startWealth, endWealth, totalStart, totalEnd, delta, growthPercent } =
+            computeWealthPeriodSummary(monthlyData);
 
           return {
             year: y,
